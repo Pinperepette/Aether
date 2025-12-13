@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.0/Aether.dmg">
-    <img src="https://img.shields.io/badge/Download-v1.1.0-blue?style=for-the-badge&logo=apple" alt="Download">
+  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.1/Aether.dmg">
+    <img src="https://img.shields.io/badge/Download-v1.1.1-blue?style=for-the-badge&logo=apple" alt="Download">
   </a>
   <img src="https://img.shields.io/badge/macOS-14.0+-black?style=for-the-badge&logo=apple" alt="macOS 14.0+">
   <img src="https://img.shields.io/badge/Swift-5.9-orange?style=for-the-badge&logo=swift" alt="Swift 5.9">
@@ -21,7 +21,21 @@
 
 ## Download
 
-**[Download Aether v1.1.0](https://github.com/Pinperepette/Aether/releases/download/v1.1.0/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+**[Download Aether v1.1.1](https://github.com/Pinperepette/Aether/releases/download/v1.1.1/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+
+## What's New in v1.1.1
+
+### Branch Visualization
+- **Branch Arrows**: Color-coded arrows showing jump directions
+  - 🟢 Green: Conditional forward jumps (skip code)
+  - 🔴 Red: Conditional backward jumps (loops)
+  - 🔵 Blue: Unconditional forward jumps
+  - 🟠 Orange: Unconditional backward jumps
+  - 🟣 Purple: Function calls
+- **Jump Table View**: Panel listing all jumps with filtering and sorting (⇧⌘J)
+- **Inline Target Preview**: Hover over jumps to see target code
+- **Branch Probability**: Estimated probability (Likely/Unlikely/50-50)
+- **Branch Statistics**: Summary of branches in disassembly header
 
 ## What's New in v1.1.0
 
@@ -75,6 +89,7 @@
 | Deobfuscation Analysis | - | Analyze obfuscation techniques |
 | Type Recovery | - | Recover data types |
 | Idiom Recognition | - | Recognize code patterns |
+| Show Jump Table | ⇧⌘J | View all branches and jumps |
 
 ### Export Menu
 | Format | Description |
@@ -103,7 +118,7 @@
 
 ### Download DMG (Recommended)
 
-1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.0/Aether.dmg)
+1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.1/Aether.dmg)
 2. Open the DMG and drag Aether to Applications
 3. Launch Aether from Applications
 
@@ -142,6 +157,7 @@ The built application will be available at `.build/release/Aether`.
 | Decompile | ⇧⌘D |
 | Pseudo-Code | ⇧⌘P |
 | Call Graph | ⌘K |
+| Jump Table | ⇧⌘J |
 
 ## Supported Formats
 
