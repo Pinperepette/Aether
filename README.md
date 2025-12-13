@@ -1,7 +1,7 @@
 # Aether
 
 <p align="center">
-  <img src="img/1.png" alt="Aether - Welcome Screen" width="700">
+  <img src="img/5.png" alt="Aether - Welcome Screen" width="700">
 </p>
 
 <p align="center">
