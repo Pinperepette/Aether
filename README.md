@@ -107,7 +107,7 @@
 ## Screenshots
 
 <p align="center">
-  <img src="img/2.png" alt="Aether - Disassembly View" width="700">
+  <img src="img/6.png" alt="Aether - Disassembly View" width="700">
 </p>
 
 <p align="center">
