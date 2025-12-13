@@ -111,12 +111,9 @@
 </p>
 
 <p align="center">
-  <img src="img/3.png" alt="Aether - Analysis View" width="700">
+  <img src="img/7.png" alt="Aether - Analysis View" width="700">
 </p>
 
-<p align="center">
-  <img src="img/4.png" alt="Aether - Analysis View" width="700">
-</p>
 
 ## Installation
 
