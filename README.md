@@ -119,11 +119,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
-
-- Inspired by [Hopper Disassembler](https://www.hopperapp.com/), [Ghidra](https://ghidra-sre.org/), and [IDA Pro](https://hex-rays.com/ida-pro/)
-- Built with Swift and SwiftUI
-
 ---
 
 <p align="center">
