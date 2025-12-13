@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.0.0/Aether.dmg">
-    <img src="https://img.shields.io/badge/Download-v1.0.0-blue?style=for-the-badge&logo=apple" alt="Download">
+  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.0/Aether.dmg">
+    <img src="https://img.shields.io/badge/Download-v1.1.0-blue?style=for-the-badge&logo=apple" alt="Download">
   </a>
   <img src="https://img.shields.io/badge/macOS-14.0+-black?style=for-the-badge&logo=apple" alt="macOS 14.0+">
   <img src="https://img.shields.io/badge/Swift-5.9-orange?style=for-the-badge&logo=swift" alt="Swift 5.9">
@@ -21,10 +21,34 @@
 
 ## Download
 
-**[Download Aether v1.0.0](https://github.com/Pinperepette/Aether/releases/download/v1.0.0/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+**[Download Aether v1.1.0](https://github.com/Pinperepette/Aether/releases/download/v1.1.0/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+
+## What's New in v1.1.0
+
+### Advanced Analysis Features
+- **Pseudo-Code Generation**: Convert assembly to structured C-like code with if/else, while, for loops
+- **Call Graph Visualization**: Interactive graph showing function call relationships with multiple layouts (hierarchical, radial, force-directed)
+- **Crypto Detection**: Automatically detect cryptographic algorithms (AES, SHA, RSA, etc.) by signature matching
+- **Deobfuscation Analysis**: Detect obfuscation techniques (control flow flattening, opaque predicates, junk code)
+- **Type Recovery**: Infer data types (structs, arrays, enums) from memory access patterns
+- **Idiom Recognition**: Recognize common code patterns (strlen, memcpy, multiplication via shifts)
+
+### Export Formats
+- **IDA Python Script**: Export analysis to IDA Pro format
+- **Ghidra XML**: Export to Ghidra project format
+- **Radare2 Script**: Export to r2 commands
+- **Binary Ninja Script**: Export to Binary Ninja format
+- **JSON/CSV/HTML/Markdown**: Multiple report formats
+- **C Header**: Generate header files with function signatures
+
+### Other Improvements
+- **Data Flow Analysis**: Def-use chains, reaching definitions, constant propagation
+- **AI Annotator**: Suggest function names and comments based on behavior analysis
+- **Lightweight Emulator**: Trace execution for x86-64
 
 ## Features
 
+### Core Features
 - **Multi-Architecture Support**: ARM64 and x86_64
 - **Multiple Binary Formats**: Mach-O, ELF, PE/COFF, JAR/Java Class
 - **Modern UI**: Native SwiftUI interface with dark mode
@@ -37,6 +61,33 @@
 - **Cross-References**: Track code and data references
 - **Symbol Support**: Full symbol table parsing
 - **Project System**: Save and restore analysis sessions
+
+### Analysis Menu
+| Feature | Shortcut | Description |
+|---------|----------|-------------|
+| Analyze All | ⇧⌘A | Run full binary analysis |
+| Find Functions | ⇧⌘F | Detect and list all functions |
+| Show CFG | ⌘G | Display control flow graph |
+| Decompile | ⇧⌘D | Generate decompiled code |
+| Generate Pseudo-Code | ⇧⌘P | Generate structured pseudo-code |
+| Call Graph | ⌘K | Show interactive call graph |
+| Crypto Detection | - | Detect cryptographic algorithms |
+| Deobfuscation Analysis | - | Analyze obfuscation techniques |
+| Type Recovery | - | Recover data types |
+| Idiom Recognition | - | Recognize code patterns |
+
+### Export Menu
+| Format | Description |
+|--------|-------------|
+| IDA Python | Script for IDA Pro |
+| Ghidra XML | Project file for Ghidra |
+| Radare2 | r2 command script |
+| Binary Ninja | Python script for BN |
+| JSON | Structured data export |
+| CSV | Spreadsheet-compatible |
+| HTML | Web report with styling |
+| Markdown | Documentation format |
+| C Header | Function declarations |
 
 ## Screenshots
 
@@ -52,7 +103,7 @@
 
 ### Download DMG (Recommended)
 
-1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.0.0/Aether.dmg)
+1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.0/Aether.dmg)
 2. Open the DMG and drag Aether to Applications
 3. Launch Aether from Applications
 
@@ -73,6 +124,9 @@ The built application will be available at `.build/release/Aether`.
 3. **Analyze**: Use `Analysis → Analyze All` (⇧⌘A) for full analysis
 4. **View CFG**: Select a function and press ⌘G to see the control flow graph
 5. **Decompile**: Press ⇧⌘D to generate pseudo-C code
+6. **Pseudo-Code**: Press ⇧⌘P to generate structured pseudo-code
+7. **Call Graph**: Press ⌘K to view function call relationships
+8. **Export**: Use the Export menu to save analysis in various formats
 
 ### Keyboard Shortcuts
 
@@ -86,6 +140,8 @@ The built application will be available at `.build/release/Aether`.
 | Find Functions | ⇧⌘F |
 | Show CFG | ⌘G |
 | Decompile | ⇧⌘D |
+| Pseudo-Code | ⇧⌘P |
+| Call Graph | ⌘K |
 
 ## Supported Formats
 
@@ -104,11 +160,14 @@ Aether/
 ├── Core/
 │   ├── Binary/    # Binary format loaders (Mach-O, ELF, PE, JAR)
 │   ├── Disassembler/  # Disassembly engine
-│   ├── Analysis/  # Function, string, and xref analysis
-│   └── Decompiler/    # Pseudo-code generation
+│   ├── Analysis/  # Function, string, xref, crypto, type analysis
+│   ├── Decompiler/    # Pseudo-code generation
+│   └── Emulation/     # Lightweight CPU emulator
 ├── UI/            # SwiftUI views and components
+│   ├── GraphView/     # CFG and Call Graph visualization
+│   └── AnalysisViews/ # Analysis result views
 ├── Models/        # Data models
-└── Services/      # Plugin system, scripting engine
+└── Services/      # Export manager, plugin system, scripting
 ```
 
 ## Contributing

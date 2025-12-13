@@ -28,6 +28,22 @@ class AppState: ObservableObject {
     @Published var showSearch = false
     @Published var sidebarSelection: SidebarItem = .functions
 
+    // MARK: - Advanced Analysis UI State
+    @Published var showCallGraph = false
+    @Published var showCryptoDetection = false
+    @Published var showDeobfuscation = false
+    @Published var showTypeRecovery = false
+    @Published var showIdiomRecognition = false
+    @Published var showExportSheet = false
+    @Published var showPseudoCode = false
+
+    // MARK: - Advanced Analysis Results
+    @Published var cryptoFindings: [AdvancedCryptoDetector.CryptoFinding] = []
+    @Published var deobfuscationReport: DeobfuscationReportWrapper?
+    @Published var recoveredTypes: [RecoveredTypeWrapper] = []
+    @Published var recognizedIdioms: [IdiomRecognizer.Idiom] = []
+    @Published var structuredCode: String = ""
+
     // MARK: - Analysis Results
     @Published var functions: [Function] = []
     @Published var strings: [StringReference] = []
@@ -255,6 +271,311 @@ class AppState: ObservableObject {
             isLoading = true
             loadingMessage = "Finding functions..."
             self.functions = await functionAnalyzer.analyze(binary: binary, disassembler: disassembler)
+            isLoading = false
+        }
+    }
+
+    // MARK: - Advanced Analysis
+
+    func runCryptoDetection() {
+        guard let binary = currentFile else { return }
+        Task {
+            isLoading = true
+            loadingMessage = "Detecting cryptographic patterns..."
+            let detector = AdvancedCryptoDetector()
+            self.cryptoFindings = detector.scan(binary: binary)
+            isLoading = false
+            showCryptoDetection = true
+        }
+    }
+
+    func runDeobfuscation() {
+        guard let binary = currentFile, let function = selectedFunction else { return }
+        Task {
+            isLoading = true
+            loadingMessage = "Analyzing obfuscation..."
+            let deobfuscator = Deobfuscator()
+            let instructions = await disassembleFunction(function)
+
+            // Build basic blocks for analysis
+            var basicBlocks: [BasicBlock] = []
+            if !instructions.isEmpty {
+                let bb = BasicBlock(startAddress: function.startAddress, endAddress: function.endAddress, instructions: instructions)
+                basicBlocks.append(bb)
+            }
+
+            var func_ = function
+            func_.basicBlocks = basicBlocks
+            let findings = deobfuscator.analyze(function: func_, binary: binary)
+            let result = deobfuscator.deobfuscate(function: func_, binary: binary)
+
+            self.deobfuscationReport = DeobfuscationReportWrapper.from(result, findings: findings)
+            isLoading = false
+            showDeobfuscation = true
+        }
+    }
+
+    func runTypeRecovery() {
+        guard let binary = currentFile, let function = selectedFunction else { return }
+        Task {
+            isLoading = true
+            loadingMessage = "Recovering types..."
+            let recovery = TypeRecovery()
+            let instructions = await disassembleFunction(function)
+
+            var basicBlocks: [BasicBlock] = []
+            if !instructions.isEmpty {
+                let bb = BasicBlock(startAddress: function.startAddress, endAddress: function.endAddress, instructions: instructions)
+                basicBlocks.append(bb)
+            }
+
+            self.recoveredTypes = recovery.recoverTypes(function: function, blocks: basicBlocks, binary: binary)
+            isLoading = false
+            showTypeRecovery = true
+        }
+    }
+
+    func runIdiomRecognition() {
+        guard let function = selectedFunction else { return }
+        Task {
+            isLoading = true
+            loadingMessage = "Recognizing code idioms..."
+            let recognizer = IdiomRecognizer()
+            let instructions = await disassembleFunction(function)
+
+            var basicBlocks: [BasicBlock] = []
+            if !instructions.isEmpty {
+                let bb = BasicBlock(startAddress: function.startAddress, endAddress: function.endAddress, instructions: instructions)
+                basicBlocks.append(bb)
+            }
+
+            var func_ = function
+            func_.basicBlocks = basicBlocks
+            self.recognizedIdioms = recognizer.recognize(function: func_)
+            isLoading = false
+            showIdiomRecognition = true
+        }
+    }
+
+    func generateStructuredCode() {
+        guard let binary = currentFile, let function = selectedFunction else { return }
+        Task {
+            isLoading = true
+            loadingMessage = "Generating structured code..."
+            let instructions = await disassembleFunction(function)
+
+            guard !instructions.isEmpty else {
+                self.structuredCode = "// No instructions found for function"
+                isLoading = false
+                showPseudoCode = true
+                return
+            }
+
+            // Build proper basic blocks by splitting at control flow instructions
+            let basicBlocks = buildBasicBlocks(from: instructions, function: function)
+
+            var func_ = function
+            func_.basicBlocks = basicBlocks
+
+            // Generate pseudo-code directly from instructions
+            self.structuredCode = generatePseudoCodeFromInstructions(instructions, function: func_, binary: binary)
+            isLoading = false
+            showPseudoCode = true
+        }
+    }
+
+    private func buildBasicBlocks(from instructions: [Instruction], function: Function) -> [BasicBlock] {
+        guard !instructions.isEmpty else { return [] }
+
+        var blocks: [BasicBlock] = []
+        var currentBlockStart = 0
+        var leaders: Set<UInt64> = [instructions[0].address]
+
+        // Find all leaders (start of basic blocks)
+        for (index, insn) in instructions.enumerated() {
+            // After a branch/jump, the next instruction is a leader
+            if insn.type == .jump || insn.type == .conditionalJump || insn.type == .call || insn.type == .return {
+                if index + 1 < instructions.count {
+                    leaders.insert(instructions[index + 1].address)
+                }
+                // Target of jump is also a leader
+                if let target = insn.branchTarget {
+                    leaders.insert(target)
+                }
+            }
+        }
+
+        // Create basic blocks
+        let sortedLeaders = leaders.sorted()
+        for (i, leaderAddr) in sortedLeaders.enumerated() {
+            guard let startIdx = instructions.firstIndex(where: { $0.address == leaderAddr }) else { continue }
+
+            let endIdx: Int
+            if i + 1 < sortedLeaders.count {
+                let nextLeader = sortedLeaders[i + 1]
+                endIdx = instructions.firstIndex(where: { $0.address >= nextLeader }) ?? instructions.count
+            } else {
+                endIdx = instructions.count
+            }
+
+            if startIdx < endIdx {
+                let blockInsns = Array(instructions[startIdx..<endIdx])
+                let endAddr = blockInsns.last.map { $0.address + UInt64($0.size) } ?? leaderAddr
+                let bb = BasicBlock(startAddress: leaderAddr, endAddress: endAddr, instructions: blockInsns)
+                blocks.append(bb)
+            }
+        }
+
+        return blocks
+    }
+
+    private func generatePseudoCodeFromInstructions(_ instructions: [Instruction], function: Function, binary: BinaryFile) -> String {
+        var output = "// Function: \(function.displayName)\n"
+        output += "// Address: 0x\(String(format: "%llX", function.startAddress))\n"
+        output += "// Size: \(function.size) bytes\n\n"
+
+        // Generate function signature
+        output += "void \(function.displayName.replacingOccurrences(of: "-", with: "_").replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "").replacingOccurrences(of: " ", with: "_"))() {\n"
+
+        var indent = "    "
+        var pendingElse = false
+        var loopStack: [UInt64] = []
+
+        for (index, insn) in instructions.enumerated() {
+            let addr = String(format: "0x%llX", insn.address)
+
+            switch insn.type {
+            case .conditionalJump:
+                // Generate if statement
+                let condition = extractCondition(from: insn)
+                if let target = insn.branchTarget, target < insn.address {
+                    // Backward jump = loop
+                    output += "\(indent)// Loop back to \(String(format: "0x%llX", target))\n"
+                    output += "\(indent)} // end loop\n"
+                } else {
+                    output += "\(indent)if (\(condition)) {\n"
+                    indent += "    "
+                    pendingElse = true
+                }
+
+            case .jump:
+                if let target = insn.branchTarget {
+                    if target < insn.address {
+                        // Backward jump = loop
+                        output += "\(indent)// Continue loop\n"
+                    } else if pendingElse {
+                        indent = String(indent.dropLast(4))
+                        output += "\(indent)} else {\n"
+                        indent += "    "
+                        pendingElse = false
+                    } else {
+                        output += "\(indent)goto loc_\(String(format: "%llX", target));\n"
+                    }
+                }
+
+            case .call:
+                let target = insn.operands
+                output += "\(indent)\(target)();  // call\n"
+
+            case .return:
+                if indent.count > 4 {
+                    indent = String(indent.dropLast(4))
+                    output += "\(indent)}\n"
+                }
+                output += "\(indent)return;\n"
+
+            case .move:
+                let parts = insn.operands.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                if parts.count >= 2 {
+                    output += "\(indent)\(parts[0]) = \(parts[1]);\n"
+                }
+
+            case .arithmetic:
+                output += "\(indent)// \(insn.mnemonic) \(insn.operands)\n"
+                let parts = insn.operands.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                if parts.count >= 2 {
+                    let op = arithmeticOp(insn.mnemonic)
+                    output += "\(indent)\(parts[0]) \(op)= \(parts[1]);\n"
+                }
+
+            case .compare:
+                // Just a comment, the condition will be used by the next branch
+                output += "\(indent)// compare \(insn.operands)\n"
+
+            case .push:
+                output += "\(indent)push(\(insn.operands));\n"
+
+            case .pop:
+                output += "\(indent)\(insn.operands) = pop();\n"
+
+            default:
+                // Generic instruction as comment
+                if !insn.mnemonic.isEmpty {
+                    output += "\(indent)// \(insn.mnemonic) \(insn.operands)\n"
+                }
+            }
+        }
+
+        // Close any remaining blocks
+        while indent.count > 4 {
+            indent = String(indent.dropLast(4))
+            output += "\(indent)}\n"
+        }
+
+        output += "}\n"
+        return output
+    }
+
+    private func extractCondition(from insn: Instruction) -> String {
+        let mnemonic = insn.mnemonic.lowercased()
+
+        switch mnemonic {
+        case "je", "jz": return "zero_flag"
+        case "jne", "jnz": return "!zero_flag"
+        case "jg", "jnle": return "greater"
+        case "jge", "jnl": return "greater_or_equal"
+        case "jl", "jnge": return "less"
+        case "jle", "jng": return "less_or_equal"
+        case "ja", "jnbe": return "above"  // unsigned
+        case "jae", "jnb", "jnc": return "above_or_equal"
+        case "jb", "jnae", "jc": return "below"
+        case "jbe", "jna": return "below_or_equal"
+        case "js": return "sign_flag"
+        case "jns": return "!sign_flag"
+        case "jo": return "overflow_flag"
+        case "jno": return "!overflow_flag"
+        default: return "condition"
+        }
+    }
+
+    private func arithmeticOp(_ mnemonic: String) -> String {
+        switch mnemonic.lowercased() {
+        case "add": return "+"
+        case "sub": return "-"
+        case "imul", "mul": return "*"
+        case "idiv", "div": return "/"
+        case "and": return "&"
+        case "or": return "|"
+        case "xor": return "^"
+        case "shl", "sal": return "<<"
+        case "shr", "sar": return ">>"
+        default: return "?"
+        }
+    }
+
+    func exportTo(format: ExportManager.ExportFormat, url: URL) {
+        guard let binary = currentFile else { return }
+        Task {
+            isLoading = true
+            loadingMessage = "Exporting to \(format.rawValue)..."
+            let exporter = ExportManager()
+            do {
+                try exporter.export(binary: binary, functions: functions, symbols: symbols, to: url, format: format)
+                loadingMessage = "Export complete!"
+            } catch {
+                errorMessage = "Export failed: \(error.localizedDescription)"
+                showError = true
+            }
             isLoading = false
         }
     }

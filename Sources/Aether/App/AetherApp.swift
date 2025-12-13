@@ -86,6 +86,89 @@ struct AetherApp: App {
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
                 .disabled(appState.selectedFunction == nil)
+
+                Button("Generate Pseudo-Code") {
+                    appState.generateStructuredCode()
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .disabled(appState.selectedFunction == nil)
+
+                Divider()
+
+                Button("Call Graph") {
+                    appState.showCallGraph = true
+                }
+                .keyboardShortcut("k", modifiers: .command)
+                .disabled(appState.currentFile == nil)
+
+                Button("Crypto Detection") {
+                    appState.runCryptoDetection()
+                }
+                .disabled(appState.currentFile == nil)
+
+                Button("Deobfuscation Analysis") {
+                    appState.runDeobfuscation()
+                }
+                .disabled(appState.selectedFunction == nil)
+
+                Button("Type Recovery") {
+                    appState.runTypeRecovery()
+                }
+                .disabled(appState.selectedFunction == nil)
+
+                Button("Idiom Recognition") {
+                    appState.runIdiomRecognition()
+                }
+                .disabled(appState.selectedFunction == nil)
+            }
+
+            CommandMenu("Export") {
+                Button("Export to IDA Python...") {
+                    appState.showExportSheet = true
+                }
+                .disabled(appState.currentFile == nil)
+
+                Button("Export to Ghidra XML...") {
+                    exportWithFormat(.ghidraXML)
+                }
+                .disabled(appState.currentFile == nil)
+
+                Button("Export to Radare2...") {
+                    exportWithFormat(.radare2)
+                }
+                .disabled(appState.currentFile == nil)
+
+                Button("Export to Binary Ninja...") {
+                    exportWithFormat(.binaryNinja)
+                }
+                .disabled(appState.currentFile == nil)
+
+                Divider()
+
+                Button("Export to JSON...") {
+                    exportWithFormat(.json)
+                }
+                .disabled(appState.currentFile == nil)
+
+                Button("Export to CSV...") {
+                    exportWithFormat(.csv)
+                }
+                .disabled(appState.currentFile == nil)
+
+                Button("Export to HTML Report...") {
+                    exportWithFormat(.html)
+                }
+                .disabled(appState.currentFile == nil)
+
+                Button("Export to Markdown...") {
+                    exportWithFormat(.markdown)
+                }
+                .disabled(appState.currentFile == nil)
+
+                Button("Export C Header...") {
+                    exportWithFormat(.cHeader)
+                }
+                .disabled(appState.currentFile == nil)
             }
             CommandMenu("Navigate") {
                 Button("Go to Address...") {
@@ -103,6 +186,16 @@ struct AetherApp: App {
         Settings {
             SettingsView()
                 .environmentObject(appState)
+        }
+    }
+
+    private func exportWithFormat(_ format: ExportManager.ExportFormat) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.data]
+        panel.nameFieldStringValue = "\(appState.currentFile?.name ?? "export").\(format.fileExtension)"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            appState.exportTo(format: format, url: url)
         }
     }
 }

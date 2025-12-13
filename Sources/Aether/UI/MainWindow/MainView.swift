@@ -65,6 +65,34 @@ struct MainView: View {
             SearchView()
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $appState.showCallGraph) {
+            CallGraphWindowView()
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $appState.showCryptoDetection) {
+            CryptoDetectionView()
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $appState.showDeobfuscation) {
+            DeobfuscationView()
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $appState.showTypeRecovery) {
+            TypeRecoveryView()
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $appState.showIdiomRecognition) {
+            IdiomRecognitionView()
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $appState.showPseudoCode) {
+            PseudoCodeView()
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $appState.showExportSheet) {
+            ExportSheetView()
+                .environmentObject(appState)
+        }
         .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted) { providers in
             handleDrop(providers: providers)
         }
