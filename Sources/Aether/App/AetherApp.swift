@@ -120,6 +120,14 @@ struct AetherApp: App {
                     appState.runIdiomRecognition()
                 }
                 .disabled(appState.selectedFunction == nil)
+
+                Divider()
+
+                Button("Show Jump Table") {
+                    appState.showJumpTable = true
+                }
+                .keyboardShortcut("j", modifiers: [.command, .shift])
+                .disabled(appState.selectedFunction == nil)
             }
 
             CommandMenu("Export") {

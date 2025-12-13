@@ -3,8 +3,11 @@ import SwiftUI
 struct DisassemblyView: View {
     @EnvironmentObject var appState: AppState
     @State private var instructions: [Instruction] = []
+    @State private var branches: [BranchInfo] = []
     @State private var isLoading = false
     @State private var maxInstructions = 500  // Limit to prevent freezing
+    @State private var showBranchArrows = true
+    @State private var showJumpTable = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,7 +17,42 @@ struct DisassemblyView: View {
                     .foregroundColor(.accent)
                 Text("Disassembly")
                     .font(.headline)
+
                 Spacer()
+
+                // Branch stats
+                if !branches.isEmpty {
+                    HStack(spacing: 8) {
+                        Label("\(branches.filter { $0.type == .conditionalForward || $0.type == .conditionalBackward }.count)", systemImage: "arrow.triangle.branch")
+                            .font(.caption)
+                            .foregroundColor(.green)
+
+                        Label("\(branches.filter { $0.type == .conditionalBackward || $0.type == .unconditionalBackward }.count)", systemImage: "arrow.counterclockwise")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+
+                // Toggle branch arrows
+                Button {
+                    showBranchArrows.toggle()
+                } label: {
+                    Image(systemName: showBranchArrows ? "arrow.triangle.branch" : "arrow.triangle.branch")
+                        .foregroundColor(showBranchArrows ? .accent : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Toggle branch arrows")
+
+                // Show jump table
+                Button {
+                    showJumpTable = true
+                } label: {
+                    Image(systemName: "tablecells")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Show jump table")
+                .disabled(branches.isEmpty)
 
                 if let func_ = appState.selectedFunction {
                     Text(func_.displayName)
@@ -27,6 +65,12 @@ struct DisassemblyView: View {
             .background(Color.sidebar)
 
             Divider()
+
+            // Legend
+            if showBranchArrows && !branches.isEmpty {
+                BranchLegend()
+                Divider()
+            }
 
             // Content
             if appState.currentFile == nil {
@@ -49,11 +93,17 @@ struct DisassemblyView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(instructions) { insn in
-                                InstructionRow(instruction: insn, isSelected: insn.address == appState.selectedAddress)
-                                    .id(insn.address)
-                                    .onTapGesture {
-                                        appState.selectedAddress = insn.address
-                                    }
+                                let branchInfo = branches.first { $0.sourceAddress == insn.address }
+                                EnhancedInstructionRow(
+                                    instruction: insn,
+                                    isSelected: insn.address == appState.selectedAddress,
+                                    branchInfo: branchInfo,
+                                    allInstructions: instructions
+                                )
+                                .id(insn.address)
+                                .onTapGesture {
+                                    appState.selectedAddress = insn.address
+                                }
                             }
                         }
                         .padding(.vertical, 4)
@@ -79,11 +129,16 @@ struct DisassemblyView: View {
         .onAppear {
             loadInstructions()
         }
+        .sheet(isPresented: $showJumpTable) {
+            JumpTableView(branches: branches)
+                .environmentObject(appState)
+        }
     }
 
     private func loadInstructions() {
         guard appState.currentFile != nil else {
             instructions = []
+            branches = []
             return
         }
 
@@ -105,7 +160,66 @@ struct DisassemblyView: View {
                 instructions = result
             }
 
+            // Analyze branches
+            branches = BranchAnalyzer.analyzeBranches(instructions: instructions)
+
             isLoading = false
+        }
+    }
+}
+
+// MARK: - Branch Legend
+
+struct BranchLegend: View {
+    var body: some View {
+        HStack(spacing: 16) {
+            LegendItem(color: .green, icon: "arrow.down.right", text: "Conditional (skip)")
+            LegendItem(color: .red, icon: "arrow.up.left", text: "Loop")
+            LegendItem(color: .blue, icon: "arrow.down", text: "Jump")
+            LegendItem(color: .purple, icon: "arrow.right.circle", text: "Call")
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                ProbabilityLegendItem(color: .green, text: "Likely")
+                ProbabilityLegendItem(color: .red, text: "Unlikely")
+                ProbabilityLegendItem(color: .yellow, text: "50/50")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        .background(Color.sidebar.opacity(0.5))
+        .font(.caption2)
+    }
+}
+
+struct LegendItem: View {
+    let color: Color
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .font(.caption2)
+            Text(text)
+                .foregroundColor(.secondary)
+        }
+    }
+}
+
+struct ProbabilityLegendItem: View {
+    let color: Color
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(text)
+                .foregroundColor(.secondary)
         }
     }
 }

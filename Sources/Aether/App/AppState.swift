@@ -36,6 +36,7 @@ class AppState: ObservableObject {
     @Published var showIdiomRecognition = false
     @Published var showExportSheet = false
     @Published var showPseudoCode = false
+    @Published var showJumpTable = false
 
     // MARK: - Advanced Analysis Results
     @Published var cryptoFindings: [AdvancedCryptoDetector.CryptoFinding] = []
