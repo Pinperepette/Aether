@@ -40,6 +40,13 @@
 3. Click "AI Analysis" in toolbar → Analyze Function or Analyze Binary
 4. Review findings, bypass techniques, and patch points
 
+<p align="center">
+  <img src="img/1.png" alt="Aether - Disassembly View" width="700">
+</p>
+<p align="center">
+  <img src="img/2.png" alt="Aether - Disassembly View" width="700">
+</p>
+
 ## What's New in v1.1.5
 
 ### Performance & Stability
