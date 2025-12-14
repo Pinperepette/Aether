@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.3/Aether.dmg">
-    <img src="https://img.shields.io/badge/Download-v1.1.3-blue?style=for-the-badge&logo=apple" alt="Download">
+  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.4/Aether.dmg">
+    <img src="https://img.shields.io/badge/Download-v1.1.4-blue?style=for-the-badge&logo=apple" alt="Download">
   </a>
   <img src="https://img.shields.io/badge/macOS-14.0+-black?style=for-the-badge&logo=apple" alt="macOS 14.0+">
   <img src="https://img.shields.io/badge/Swift-5.9-orange?style=for-the-badge&logo=swift" alt="Swift 5.9">
@@ -21,7 +21,18 @@
 
 ## Download
 
-**[Download Aether v1.1.3](https://github.com/Pinperepette/Aether/releases/download/v1.1.3/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+**[Download Aether v1.1.4](https://github.com/Pinperepette/Aether/releases/download/v1.1.4/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+
+## What's New in v1.1.4
+
+### Enhanced Decompiler
+- **Control Flow Recovery**: Integrated ControlFlowStructurer for proper structure recovery (if/else, while, for loops)
+- **String Literal Detection**: New string cache system for better string recognition in decompiled code
+- **Improved Type Inference**: Better inference for parameters, local variables and return types
+- **Prologue/Epilogue Detection**: Automatically skip boilerplate function setup code
+- **Smart Condition Building**: Combines compare+jump patterns into readable conditions
+- **Better Variable Names**: Improved register to variable name mapping for both x86_64 and ARM64
+- **Enhanced Operations**: Full support for increment, decrement, logic and arithmetic operations
 
 ## What's New in v1.1.3
 
@@ -134,7 +145,7 @@
 
 ### Download DMG (Recommended)
 
-1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.2/Aether.dmg)
+1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.4/Aether.dmg)
 2. Open the DMG and drag Aether to Applications
 3. Launch Aether from Applications
 
