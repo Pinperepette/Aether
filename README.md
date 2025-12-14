@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.1/Aether.dmg">
-    <img src="https://img.shields.io/badge/Download-v1.1.1-blue?style=for-the-badge&logo=apple" alt="Download">
+  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.2/Aether.dmg">
+    <img src="https://img.shields.io/badge/Download-v1.1.2-blue?style=for-the-badge&logo=apple" alt="Download">
   </a>
   <img src="https://img.shields.io/badge/macOS-14.0+-black?style=for-the-badge&logo=apple" alt="macOS 14.0+">
   <img src="https://img.shields.io/badge/Swift-5.9-orange?style=for-the-badge&logo=swift" alt="Swift 5.9">
@@ -21,7 +21,14 @@
 
 ## Download
 
-**[Download Aether v1.1.1](https://github.com/Pinperepette/Aether/releases/download/v1.1.1/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+**[Download Aether v1.1.2](https://github.com/Pinperepette/Aether/releases/download/v1.1.2/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+
+## What's New in v1.1.2
+
+### Bug Fixes
+- **Fixed crash with -128 displacement**: Int8 overflow bug that caused SIGILL crash when disassembling instructions like `lea rdi, [rbp-0x80]`
+- **Added bounds checking**: Safe array access for register names and condition codes
+- **Improved stability**: Better handling of large binaries and edge cases
 
 ## What's New in v1.1.1
 
@@ -119,7 +126,7 @@
 
 ### Download DMG (Recommended)
 
-1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.1/Aether.dmg)
+1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.2/Aether.dmg)
 2. Open the DMG and drag Aether to Applications
 3. Launch Aether from Applications
 
