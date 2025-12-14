@@ -104,7 +104,12 @@ private struct ErrorView: View {
 
 private struct ResultsView: View {
     let result: SecurityAnalysisResult
+    @EnvironmentObject var appState: AppState
     @State private var selectedTab = 0
+
+    private var hasBypassInfo: Bool {
+        !result.bypassTechniques.isEmpty || !result.patchPoints.isEmpty
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -145,7 +150,51 @@ private struct ResultsView: View {
                     .tag(2)
             }
             .tabViewStyle(.automatic)
+
+            // Frida Integration Button
+            if hasBypassInfo {
+                Divider()
+                FridaIntegrationBar(result: result)
+                    .environmentObject(appState)
+            }
         }
+    }
+}
+
+// MARK: - Frida Integration Bar
+
+private struct FridaIntegrationBar: View {
+    let result: SecurityAnalysisResult
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "hammer.fill")
+                .foregroundColor(.orange)
+                .font(.title2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Bypass techniques detected!")
+                    .font(.headline)
+                Text("Generate a Frida script to implement these bypasses")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                appState.generateFridaFromSecurityAnalysis(result)
+                dismiss()
+            } label: {
+                Label("Generate Frida Script", systemImage: "chevron.right")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
     }
 }
 

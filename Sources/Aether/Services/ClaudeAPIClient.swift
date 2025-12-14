@@ -47,6 +47,31 @@ class ClaudeAPIClient {
         return parseSecurityResponse(response)
     }
 
+    /// Generate Frida script using AI
+    func generateFridaScriptAsync(
+        functionName: String,
+        decompiledCode: String,
+        disassembly: String,
+        securityFindings: [String],
+        bypassTechniques: [String],
+        platform: String,
+        hookType: String,
+        apiKey: String
+    ) async throws -> AIFridaScriptResult {
+        let prompt = buildFridaPrompt(
+            functionName: functionName,
+            decompiledCode: decompiledCode,
+            disassembly: disassembly,
+            securityFindings: securityFindings,
+            bypassTechniques: bypassTechniques,
+            platform: platform,
+            hookType: hookType
+        )
+
+        let response = try await sendMessage(prompt: prompt, apiKey: apiKey)
+        return parseFridaResponse(response)
+    }
+
     // MARK: - Private Methods
 
     private func sendMessage(prompt: String, apiKey: String) async throws -> String {
@@ -339,6 +364,207 @@ class ClaudeAPIClient {
             suspiciousBehaviors: suspiciousBehaviors,
             hardcodedSecrets: hardcodedSecrets,
             rawResponse: rawResponse
+        )
+    }
+
+    // MARK: - Frida Script Generation
+
+    private func buildFridaPrompt(
+        functionName: String,
+        decompiledCode: String,
+        disassembly: String,
+        securityFindings: [String],
+        bypassTechniques: [String],
+        platform: String,
+        hookType: String
+    ) -> String {
+        var prompt = """
+        You are an expert Frida hooking specialist for \(platform).
+        Generate a complete, working Frida script for the following function.
+
+        ## Function: \(functionName)
+
+        ### Decompiled Code:
+        ```c
+        \(decompiledCode.prefix(6000))
+        ```
+
+        ### Assembly (first 150 instructions):
+        ```asm
+        \(disassembly.prefix(5000))
+        ```
+
+        """
+
+        if !securityFindings.isEmpty {
+            prompt += """
+
+            ### Security Findings:
+            \(securityFindings.prefix(10).joined(separator: "\n"))
+
+            """
+        }
+
+        if !bypassTechniques.isEmpty {
+            prompt += """
+
+            ### Bypass Techniques to Implement:
+            \(bypassTechniques.joined(separator: "\n"))
+
+            """
+        }
+
+        prompt += """
+
+        ### Requirements:
+        1. Platform: \(platform)
+        2. Hook Type: \(hookType)
+        3. Handle ASLR with Module.findBaseAddress() or Process.findModuleByName()
+        4. Log all arguments with proper type handling
+        5. Implement bypass techniques where applicable
+        6. Add error handling and null checks
+        7. Include helpful console.log messages
+
+        ### Hook Type Details:
+        """
+
+        switch hookType.lowercased() {
+        case "trace":
+            prompt += """
+
+            - Log all function arguments and their types
+            - Log return value
+            - Include backtrace
+            - Show call context (registers, stack)
+            """
+        case "bypass":
+            prompt += """
+
+            - Modify return value to bypass checks
+            - Implement specific bypass techniques from the findings
+            - Force success/true returns where needed
+            - NOP or skip validation logic
+            """
+        case "intercept":
+            prompt += """
+
+            - Allow modifying arguments before the function runs
+            - Allow modifying return value after
+            - Include examples of common modifications
+            - Show how to replace string arguments
+            """
+        case "memory dump":
+            prompt += """
+
+            - Dump memory at the function address
+            - Show hexdump of the function bytes
+            - Optionally save to file
+            - Dump stack and registers on entry
+            """
+        case "string patch":
+            prompt += """
+
+            - Search for and patch strings in memory
+            - Handle ASLR for string addresses
+            - Make memory writable before patching
+            - Verify patch was applied
+            """
+        case "anti-debug":
+            prompt += """
+
+            - Bypass ptrace PT_DENY_ATTACH
+            - Bypass sysctl P_TRACED flag check
+            - Bypass getppid parent process check
+            - Bypass any debugger detection in the code
+            """
+        default:
+            prompt += """
+
+            - General purpose hook with logging
+            - Flexible argument and return value handling
+            """
+        }
+
+        prompt += """
+
+
+        Generate output as JSON:
+        ```json
+        {
+            "script": "// Full JavaScript Frida script here\\n...",
+            "explanation": "Brief explanation of what the script does",
+            "hook_points": ["list of hooked addresses/functions"],
+            "bypass_implemented": ["list of bypasses implemented"],
+            "warnings": ["any warnings or caveats about the script"]
+        }
+        ```
+
+        The script should be COMPLETE and READY TO USE with:
+        - frida -U -f <app> -l script.js (for iOS)
+        - frida -f <app> -l script.js (for macOS)
+
+        Make the script robust with proper error handling.
+        """
+
+        return prompt
+    }
+
+    private func parseFridaResponse(_ response: String) -> AIFridaScriptResult {
+        // Try to extract JSON from the response
+        var jsonString = response
+
+        // Find JSON block in markdown code fence
+        if let jsonStart = response.range(of: "```json"),
+           let jsonEnd = response.range(of: "```", range: jsonStart.upperBound..<response.endIndex) {
+            jsonString = String(response[jsonStart.upperBound..<jsonEnd.lowerBound])
+        } else if let jsonStart = response.range(of: "{"),
+                  let jsonEnd = response.range(of: "}", options: .backwards) {
+            jsonString = String(response[jsonStart.lowerBound...jsonEnd.upperBound])
+        }
+
+        // Try to parse JSON
+        if let data = jsonString.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return parseFridaJSON(json, rawResponse: response)
+        }
+
+        // Fallback: Try to extract script from code fence
+        var script = response
+        if let scriptStart = response.range(of: "```javascript"),
+           let scriptEnd = response.range(of: "```", range: scriptStart.upperBound..<response.endIndex) {
+            script = String(response[scriptStart.upperBound..<scriptEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if let scriptStart = response.range(of: "```js"),
+                  let scriptEnd = response.range(of: "```", range: scriptStart.upperBound..<response.endIndex) {
+            script = String(response[scriptStart.upperBound..<scriptEnd.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return AIFridaScriptResult(
+            script: script,
+            explanation: "AI-generated Frida script",
+            hookPoints: [],
+            bypassImplemented: [],
+            warnings: ["Response was not in expected JSON format"]
+        )
+    }
+
+    private func parseFridaJSON(_ json: [String: Any], rawResponse: String) -> AIFridaScriptResult {
+        var script = json["script"] as? String ?? ""
+
+        // Clean up the script - handle escaped newlines
+        script = script.replacingOccurrences(of: "\\n", with: "\n")
+        script = script.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let explanation = json["explanation"] as? String ?? "AI-generated Frida script"
+        let hookPoints = json["hook_points"] as? [String] ?? []
+        let bypassImplemented = json["bypass_implemented"] as? [String] ?? []
+        let warnings = json["warnings"] as? [String] ?? []
+
+        return AIFridaScriptResult(
+            script: script,
+            explanation: explanation,
+            hookPoints: hookPoints,
+            bypassImplemented: bypassImplemented,
+            warnings: warnings
         )
     }
 }

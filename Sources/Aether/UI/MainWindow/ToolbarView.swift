@@ -160,6 +160,82 @@ struct ToolbarView: View {
                 }
             }
 
+            Divider()
+                .frame(height: 24)
+
+            // Frida Script Generation
+            Menu {
+                Button {
+                    appState.generateFridaScript()
+                } label: {
+                    Label("Generate Basic Script", systemImage: "doc.text")
+                }
+                .disabled(appState.selectedFunction == nil)
+
+                if appState.hasClaudeAPIKey {
+                    Button {
+                        appState.generateFridaScriptWithAI()
+                    } label: {
+                        Label("Generate with AI", systemImage: "brain")
+                    }
+                    .disabled(appState.selectedFunction == nil)
+                }
+
+                Button {
+                    appState.generateMultiFunctionFridaScript()
+                } label: {
+                    Label("Hook Multiple Functions", systemImage: "list.bullet")
+                }
+                .disabled(appState.functions.isEmpty)
+
+                Divider()
+
+                // Platform submenu
+                Menu("Platform") {
+                    ForEach(FridaPlatform.allCases) { platform in
+                        Button {
+                            appState.selectedFridaPlatform = platform
+                        } label: {
+                            HStack {
+                                Text(platform.rawValue)
+                                if appState.selectedFridaPlatform == platform {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Hook type submenu
+                Menu("Hook Type") {
+                    ForEach(FridaHookType.allCases) { type in
+                        Button {
+                            appState.selectedFridaHookType = type
+                        } label: {
+                            HStack {
+                                Label(type.rawValue, systemImage: type.icon)
+                                if appState.selectedFridaHookType == type {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+            } label: {
+                VStack(spacing: 2) {
+                    Image(systemName: "hammer.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.orange)
+                    Text("Frida")
+                        .font(.caption2)
+                }
+                .frame(minWidth: 50)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 8)
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(appState.currentFile == nil)
+
             Spacer()
 
             // Search

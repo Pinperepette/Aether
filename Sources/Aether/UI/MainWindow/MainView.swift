@@ -101,6 +101,10 @@ struct MainView: View {
             )
             .environmentObject(appState)
         }
+        .sheet(isPresented: $appState.showFridaScript) {
+            FridaScriptView()
+                .environmentObject(appState)
+        }
         .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted) { providers in
             handleDrop(providers: providers)
         }

@@ -39,6 +39,17 @@ class AppState: ObservableObject {
     @Published var showJumpTable = false
     @Published var showSettings = false
     @Published var showSecurityAnalysis = false
+    @Published var showFridaScript = false
+
+    // MARK: - Frida Script Generation State
+    @Published var isGeneratingFridaScript = false
+    @Published var fridaScriptResult: FridaScriptResult?
+    @Published var aiFridaScriptResult: AIFridaScriptResult?
+    @Published var fridaScriptError: String?
+    @Published var selectedFridaPlatform: FridaPlatform = .macOS
+    @Published var selectedFridaHookType: FridaHookType = .trace
+    @Published var preConfiguredBypassTechniques: [String] = []
+    @Published var preConfiguredPatchPoints: [String] = []
 
     // MARK: - AI Analysis State
     @Published var isAnalyzingWithAI = false
@@ -99,6 +110,7 @@ class AppState: ObservableObject {
     private let xrefAnalyzer = XRefAnalyzer()
     private let decompiler = Decompiler()
     private let javaDecompiler = JavaDecompiler()
+    private let fridaGenerator = FridaScriptGenerator()
 
     // MARK: - File Operations
 
@@ -793,6 +805,143 @@ class AppState: ObservableObject {
                     securityAnalysisError = error.localizedDescription
                     isAnalyzingWithAI = false
                 }
+            }
+        }
+    }
+
+    // MARK: - Frida Script Generation
+
+    func generateFridaScript() {
+        guard let binary = currentFile, let function = selectedFunction else {
+            fridaScriptError = "Please select a function first"
+            showFridaScript = true
+            return
+        }
+
+        isGeneratingFridaScript = true
+        fridaScriptResult = nil
+        aiFridaScriptResult = nil
+        fridaScriptError = nil
+        showFridaScript = true
+
+        Task {
+            let result = fridaGenerator.generateHookScript(
+                function: function,
+                binary: binary,
+                platform: selectedFridaPlatform,
+                hookType: selectedFridaHookType,
+                bypassTechniques: preConfiguredBypassTechniques,
+                patchPoints: preConfiguredPatchPoints
+            )
+
+            await MainActor.run {
+                fridaScriptResult = result
+                isGeneratingFridaScript = false
+            }
+        }
+    }
+
+    func generateFridaScriptWithAI() {
+        guard let apiKey = KeychainHelper.load(key: "ClaudeAPIKey") else {
+            // Fallback to basic generation
+            generateFridaScript()
+            return
+        }
+
+        guard let binary = currentFile, let function = selectedFunction else {
+            fridaScriptError = "Please select a function first"
+            showFridaScript = true
+            return
+        }
+
+        isGeneratingFridaScript = true
+        fridaScriptResult = nil
+        aiFridaScriptResult = nil
+        fridaScriptError = nil
+        showFridaScript = true
+
+        Task {
+            do {
+                let instructions = await disassembleFunction(function)
+                let disassembly = instructions.prefix(150).map { insn in
+                    String(format: "0x%llX: %@ %@", insn.address, insn.mnemonic, insn.operands)
+                }.joined(separator: "\n")
+
+                // Use security findings if available
+                let securityFindings = securityAnalysisResult?.findings.map { $0.description } ?? []
+                let bypassTechniques = preConfiguredBypassTechniques.isEmpty
+                    ? (securityAnalysisResult?.bypassTechniques ?? [])
+                    : preConfiguredBypassTechniques
+
+                let result = try await claudeClient.generateFridaScriptAsync(
+                    functionName: function.displayName,
+                    decompiledCode: decompilerOutput,
+                    disassembly: disassembly,
+                    securityFindings: securityFindings,
+                    bypassTechniques: bypassTechniques,
+                    platform: selectedFridaPlatform.rawValue,
+                    hookType: selectedFridaHookType.rawValue,
+                    apiKey: apiKey
+                )
+
+                await MainActor.run {
+                    aiFridaScriptResult = result
+                    isGeneratingFridaScript = false
+                }
+            } catch {
+                await MainActor.run {
+                    fridaScriptError = error.localizedDescription
+                    isGeneratingFridaScript = false
+                }
+            }
+        }
+    }
+
+    func generateFridaFromSecurityAnalysis(_ securityResult: SecurityAnalysisResult) {
+        // Pre-configure the generator with security analysis results
+        selectedFridaHookType = .bypass
+        preConfiguredBypassTechniques = securityResult.bypassTechniques
+        preConfiguredPatchPoints = securityResult.patchPoints
+
+        // Generate with AI if available, otherwise basic
+        if hasClaudeAPIKey {
+            generateFridaScriptWithAI()
+        } else {
+            generateFridaScript()
+        }
+    }
+
+    func generateMultiFunctionFridaScript() {
+        guard let binary = currentFile else {
+            fridaScriptError = "No binary loaded"
+            showFridaScript = true
+            return
+        }
+
+        guard !functions.isEmpty else {
+            fridaScriptError = "No functions found. Run analysis first."
+            showFridaScript = true
+            return
+        }
+
+        isGeneratingFridaScript = true
+        fridaScriptResult = nil
+        aiFridaScriptResult = nil
+        fridaScriptError = nil
+        showFridaScript = true
+
+        Task {
+            // Use first 10 functions for multi-hook
+            let targetFunctions = Array(functions.prefix(10))
+            let result = fridaGenerator.generateMultiHookScript(
+                functions: targetFunctions,
+                binary: binary,
+                platform: selectedFridaPlatform
+            )
+
+            await MainActor.run {
+                fridaScriptResult = result
+                isGeneratingFridaScript = false
             }
         }
     }

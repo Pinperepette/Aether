@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.6/Aether.dmg">
-    <img src="https://img.shields.io/badge/Download-v1.1.6-blue?style=for-the-badge&logo=apple" alt="Download">
+  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.7/Aether.dmg">
+    <img src="https://img.shields.io/badge/Download-v1.1.7-blue?style=for-the-badge&logo=apple" alt="Download">
   </a>
   <img src="https://img.shields.io/badge/macOS-14.0+-black?style=for-the-badge&logo=apple" alt="macOS 14.0+">
   <img src="https://img.shields.io/badge/Swift-5.9-orange?style=for-the-badge&logo=swift" alt="Swift 5.9">
@@ -21,12 +21,35 @@
 
 ## Download
 
-**[Download Aether v1.1.6](https://github.com/Pinperepette/Aether/releases/download/v1.1.6/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+**[Download Aether v1.1.7](https://github.com/Pinperepette/Aether/releases/download/v1.1.7/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+
+## What's New in v1.1.7
+
+### Frida Script Generator
+- **Dynamic Instrumentation**: Generate ready-to-use Frida scripts for iOS and macOS
+- **6 Hook Types**:
+  - **Trace**: Log function calls, arguments, return values, and backtraces
+  - **Bypass**: Modify return values to bypass security checks
+  - **Intercept**: Advanced hooking with argument/return modification and context dump
+  - **Memory Dump**: Hexdump function memory at runtime
+  - **String Patch**: Find and patch strings in memory
+  - **Anti-Debug**: Bypass common anti-debugging (ptrace, sysctl, getppid, task_get_exception_ports)
+- **Platform Support**: iOS and macOS with platform-specific optimizations
+- **AI-Enhanced Scripts**: Optional AI-powered script generation with intelligent bypass detection
+- **Export Options**: Copy to clipboard or save as .js file
+- **Quick Run Guide**: Frida command shown directly in UI
+
+### How to Use Frida Generator
+1. Select a function in the sidebar
+2. Click "Frida" in toolbar (or Analysis → Frida Script)
+3. Choose platform (iOS/macOS) and hook type
+4. Click "Basic" for template or "AI Enhanced" for intelligent analysis
+5. Copy script and run: `frida -U -f <app> -l script.js`
 
 ## What's New in v1.1.6
 
-### AI Security Analysis (Claude Integration)
-- **Claude AI Integration**: Optional AI-powered security analysis using your Claude API key
+### AI Security Analysis
+- **AI Integration**: Optional AI-powered security analysis
 - **Bypass Detection**: Identifies license checks, trial limitations, and anti-piracy mechanisms
 - **Patch Points**: Suggests specific addresses and techniques for bypassing protections
 - **Security Mechanisms**: Detects code signing, integrity checks, network validation
@@ -36,7 +59,7 @@
 
 ### How to Use AI Analysis
 1. Go to Settings (⌘,) → AI tab
-2. Enter your Claude API key from console.anthropic.com
+2. Enter your API key
 3. Click "AI Analysis" in toolbar → Analyze Function or Analyze Binary
 4. Review findings, bypass techniques, and patch points
 
@@ -151,6 +174,7 @@
 | Decompile | ⇧⌘D | Generate decompiled code |
 | Generate Pseudo-Code | ⇧⌘P | Generate structured pseudo-code |
 | Call Graph | ⌘K | Show interactive call graph |
+| Frida Script | - | Generate Frida hooking scripts |
 | Crypto Detection | - | Detect cryptographic algorithms |
 | Deobfuscation Analysis | - | Analyze obfuscation techniques |
 | Type Recovery | - | Recover data types |
@@ -185,7 +209,7 @@
 
 ### Download DMG (Recommended)
 
-1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.6/Aether.dmg)
+1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.7/Aether.dmg)
 2. Open the DMG and drag Aether to Applications
 3. Launch Aether from Applications
 
@@ -250,7 +274,7 @@ Aether/
 │   ├── GraphView/     # CFG and Call Graph visualization
 │   └── AnalysisViews/ # Analysis result views
 ├── Models/        # Data models
-└── Services/      # Export manager, plugin system, scripting
+└── Services/      # Export manager, Frida generator, AI client
 ```
 
 ## Contributing

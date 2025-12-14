@@ -168,8 +168,8 @@ class MachOLoader: BinaryLoaderProtocol {
 
         debugLog("Load commands parsed: \(segments.count) segments, \(sections.count) sections, \(symbols.count) symbols")
 
-        // Determine base address
-        let baseAddress = segments.first?.address ?? 0
+        // Determine base address (skip __PAGEZERO which has address 0)
+        let baseAddress = segments.first(where: { $0.name != "__PAGEZERO" && $0.address > 0 })?.address ?? segments.first?.address ?? 0
         debugLog("Creating BinaryFile...")
 
         return BinaryFile(
