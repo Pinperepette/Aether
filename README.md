@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.2/Aether.dmg">
-    <img src="https://img.shields.io/badge/Download-v1.1.2-blue?style=for-the-badge&logo=apple" alt="Download">
+  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.3/Aether.dmg">
+    <img src="https://img.shields.io/badge/Download-v1.1.3-blue?style=for-the-badge&logo=apple" alt="Download">
   </a>
   <img src="https://img.shields.io/badge/macOS-14.0+-black?style=for-the-badge&logo=apple" alt="macOS 14.0+">
   <img src="https://img.shields.io/badge/Swift-5.9-orange?style=for-the-badge&logo=swift" alt="Swift 5.9">
@@ -21,7 +21,15 @@
 
 ## Download
 
-**[Download Aether v1.1.2](https://github.com/Pinperepette/Aether/releases/download/v1.1.2/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+**[Download Aether v1.1.3](https://github.com/Pinperepette/Aether/releases/download/v1.1.3/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+
+## What's New in v1.1.3
+
+### Conditional Jumps Patcher
+- **New Conditional Jumps View**: View and patch conditional jumps (JZ, JNZ, JE, JNE, etc.)
+- **Flip Jump Conditions**: Easily invert conditional jumps with one click
+- **Support for all x86 conditionals**: Both short (7x) and long (0F 8x) jump opcodes
+- **Search and Filter**: Find specific jumps by address or mnemonic
 
 ## What's New in v1.1.2
 
