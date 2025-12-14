@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.4/Aether.dmg">
-    <img src="https://img.shields.io/badge/Download-v1.1.4-blue?style=for-the-badge&logo=apple" alt="Download">
+  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.5/Aether.dmg">
+    <img src="https://img.shields.io/badge/Download-v1.1.5-blue?style=for-the-badge&logo=apple" alt="Download">
   </a>
   <img src="https://img.shields.io/badge/macOS-14.0+-black?style=for-the-badge&logo=apple" alt="macOS 14.0+">
   <img src="https://img.shields.io/badge/Swift-5.9-orange?style=for-the-badge&logo=swift" alt="Swift 5.9">
@@ -21,7 +21,23 @@
 
 ## Download
 
-**[Download Aether v1.1.4](https://github.com/Pinperepette/Aether/releases/download/v1.1.4/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+**[Download Aether v1.1.5](https://github.com/Pinperepette/Aether/releases/download/v1.1.5/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+
+## What's New in v1.1.5
+
+### Performance & Stability
+- **Async File Loading**: Binary loading now runs on background thread for responsive UI
+- **No More Beach Ball**: Large binaries load without freezing the interface
+- **Removed Debug Logging**: Faster parsing and reduced memory usage
+
+### Java Decompiler
+- **Full Java Bytecode Support**: Decompile JAR files and Java class files
+- **Stack Simulation**: Accurate bytecode interpretation
+- **Method Signatures**: Proper parsing of Java type descriptors
+
+### UI Improvements
+- **Cleaner Toolbar**: Removed redundant function name display
+- **Better Function Names**: Improved formatting for Java method signatures in sidebar
 
 ## What's New in v1.1.4
 
@@ -145,7 +161,7 @@
 
 ### Download DMG (Recommended)
 
-1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.4/Aether.dmg)
+1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.5/Aether.dmg)
 2. Open the DMG and drag Aether to Applications
 3. Launch Aether from Applications
 
