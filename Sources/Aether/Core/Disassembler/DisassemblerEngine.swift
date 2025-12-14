@@ -35,9 +35,14 @@ actor DisassemblerEngine {
         var offset = 0
         var currentAddress = address
 
-        while offset < data.count {
+        let maxInstructions = 100000
+        while offset < data.count && instructions.count < maxInstructions {
             let remaining = data.count - offset
-            let bytes = Array(data[offset..<min(offset + 15, data.count)])
+            guard remaining > 0 else { break }
+            let endIdx = min(offset + 15, data.count)
+            guard offset < endIdx else { break }
+            let bytes = Array(data[offset..<endIdx])
+            guard !bytes.isEmpty else { break }
 
             guard let (mnemonic, operands, size, type, target) = decodeX86_64Instruction(bytes: bytes, address: currentAddress) else {
                 // Unknown instruction, skip one byte
@@ -55,10 +60,11 @@ actor DisassemblerEngine {
                 continue
             }
 
+            let actualSize = min(size, bytes.count)
             var instruction = Instruction(
                 address: currentAddress,
-                size: size,
-                bytes: Array(bytes[0..<size]),
+                size: actualSize,
+                bytes: Array(bytes[0..<actualSize]),
                 mnemonic: mnemonic,
                 operands: operands,
                 architecture: .x86_64,
@@ -67,15 +73,15 @@ actor DisassemblerEngine {
             instruction.branchTarget = target
 
             instructions.append(instruction)
-            offset += size
-            currentAddress += UInt64(size)
+            offset += actualSize
+            currentAddress += UInt64(actualSize)
         }
 
         return instructions
     }
 
     private func decodeX86_64Instruction(bytes: [UInt8], address: UInt64) -> (String, String, Int, InstructionType, UInt64?)? {
-        guard !bytes.isEmpty else { return nil }
+        guard bytes.count >= 1 else { return nil }
 
         var idx = 0
         var hasRex = false
@@ -256,7 +262,7 @@ actor DisassemblerEngine {
                 } else if mod == 0x01 {
                     // 8-bit displacement
                     guard idx < bytes.count else { return nil }
-                    let disp = Int8(bitPattern: bytes[idx])
+                    let disp = Int(Int8(bitPattern: bytes[idx]))  // Convert to Int to avoid overflow
                     size += 1
                     let baseReg = registerName64(Int(rm) + (rexB ? 8 : 0))
                     if disp >= 0 {
@@ -1073,24 +1079,31 @@ actor DisassemblerEngine {
         if reg == 31 {
             return wide ? "sp" : "esp"
         }
-        if wide {
-            return ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
-                    "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"][reg]
-        } else {
-            return ["eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi",
-                    "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d"][reg]
+        let regs64 = ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
+                      "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
+        let regs32 = ["eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi",
+                      "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d"]
+        guard reg >= 0 && reg < 16 else {
+            return "r\(reg)"
         }
+        return wide ? regs64[reg] : regs32[reg]
     }
 
     private func conditionCode(_ code: Int) -> String {
         let codes = ["o", "no", "b", "nb", "z", "nz", "be", "a",
                      "s", "ns", "p", "np", "l", "ge", "le", "g"]
+        guard code >= 0 && code < codes.count else {
+            return "cc\(code)"
+        }
         return codes[code]
     }
 
     private func arm64ConditionCode(_ code: Int) -> String {
         let codes = ["eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc",
                      "hi", "ls", "ge", "lt", "gt", "le", "al", "nv"]
+        guard code >= 0 && code < codes.count else {
+            return "cc\(code)"
+        }
         return codes[code]
     }
 

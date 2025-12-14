@@ -721,9 +721,14 @@ class AppState: ObservableObject {
         }
 
         let offset = Int(function.startAddress - section.address)
-        let size = Int(function.size)
+        var size = Int(function.size)
 
-        guard offset >= 0, offset + size <= section.data.count else {
+        // Handle invalid sizes
+        if size <= 0 {
+            size = min(4096, section.data.count - offset)
+        }
+
+        guard offset >= 0, size > 0, offset + size <= section.data.count else {
             return []
         }
 
