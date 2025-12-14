@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.5/Aether.dmg">
-    <img src="https://img.shields.io/badge/Download-v1.1.5-blue?style=for-the-badge&logo=apple" alt="Download">
+  <a href="https://github.com/Pinperepette/Aether/releases/download/v1.1.6/Aether.dmg">
+    <img src="https://img.shields.io/badge/Download-v1.1.6-blue?style=for-the-badge&logo=apple" alt="Download">
   </a>
   <img src="https://img.shields.io/badge/macOS-14.0+-black?style=for-the-badge&logo=apple" alt="macOS 14.0+">
   <img src="https://img.shields.io/badge/Swift-5.9-orange?style=for-the-badge&logo=swift" alt="Swift 5.9">
@@ -21,7 +21,24 @@
 
 ## Download
 
-**[Download Aether v1.1.5](https://github.com/Pinperepette/Aether/releases/download/v1.1.5/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+**[Download Aether v1.1.6](https://github.com/Pinperepette/Aether/releases/download/v1.1.6/Aether.dmg)** — macOS 14.0 (Sonoma) or later
+
+## What's New in v1.1.6
+
+### AI Security Analysis (Claude Integration)
+- **Claude AI Integration**: Optional AI-powered security analysis using your Claude API key
+- **Bypass Detection**: Identifies license checks, trial limitations, and anti-piracy mechanisms
+- **Patch Points**: Suggests specific addresses and techniques for bypassing protections
+- **Security Mechanisms**: Detects code signing, integrity checks, network validation
+- **Hardcoded Secrets**: Finds obfuscated strings, API keys, and encryption keys
+- **Detailed Reports**: Findings with severity levels (Critical/High/Medium/Low/Info)
+- **Secure Storage**: API key stored in macOS Keychain (never in app bundle)
+
+### How to Use AI Analysis
+1. Go to Settings (⌘,) → AI tab
+2. Enter your Claude API key from console.anthropic.com
+3. Click "AI Analysis" in toolbar → Analyze Function or Analyze Binary
+4. Review findings, bypass techniques, and patch points
 
 ## What's New in v1.1.5
 
@@ -161,7 +178,7 @@
 
 ### Download DMG (Recommended)
 
-1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.5/Aether.dmg)
+1. Download [Aether.dmg](https://github.com/Pinperepette/Aether/releases/download/v1.1.6/Aether.dmg)
 2. Open the DMG and drag Aether to Applications
 3. Launch Aether from Applications
 
