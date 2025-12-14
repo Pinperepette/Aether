@@ -8,6 +8,7 @@ struct DisassemblyView: View {
     @State private var maxInstructions = 500  // Limit to prevent freezing
     @State private var showBranchArrows = true
     @State private var showJumpTable = false
+    @State private var showConditionalJumps = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,6 +54,17 @@ struct DisassemblyView: View {
                 .buttonStyle(.plain)
                 .help("Show jump table")
                 .disabled(branches.isEmpty)
+
+                // Conditional jumps patcher
+                Button {
+                    showConditionalJumps = true
+                } label: {
+                    Image(systemName: "arrow.triangle.swap")
+                        .foregroundColor(.orange)
+                }
+                .buttonStyle(.plain)
+                .help("Patch conditional jumps")
+                .disabled(instructions.isEmpty)
 
                 if let func_ = appState.selectedFunction {
                     Text(func_.displayName)
@@ -131,6 +143,10 @@ struct DisassemblyView: View {
         }
         .sheet(isPresented: $showJumpTable) {
             JumpTableView(branches: branches)
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $showConditionalJumps) {
+            ConditionalJumpsView(instructions: instructions)
                 .environmentObject(appState)
         }
     }
