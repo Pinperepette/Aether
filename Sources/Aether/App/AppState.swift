@@ -2,7 +2,7 @@ import SwiftUI
 import Combine
 
 func debug(_ message: String) {
-    fputs(">>> \(message)\n", stderr)
+    // Debug logging disabled for performance
 }
 
 @MainActor
@@ -90,6 +90,7 @@ class AppState: ObservableObject {
     private let stringAnalyzer = StringAnalyzer()
     private let xrefAnalyzer = XRefAnalyzer()
     private let decompiler = Decompiler()
+    private let javaDecompiler = JavaDecompiler()
 
     // MARK: - File Operations
 
@@ -139,71 +140,80 @@ class AppState: ObservableObject {
     }
 
     func loadFile(url: URL) async {
-        debug("loadFile called for: \(url.path)")
         isLoading = true
         loadingProgress = 0
         loadingMessage = "Loading file..."
         errorMessage = nil
 
+        // Capture references for background work
+        let loader = binaryLoader
+        let strAnalyzer = stringAnalyzer
+
         do {
-            // Load binary
             loadingMessage = "Parsing binary format..."
             loadingProgress = 0.1
-            debug("Parsing binary...")
 
-            let binary = try await binaryLoader.load(from: url)
-            debug("Binary loaded: \(binary.name)")
-            debug("Format: \(binary.format), Arch: \(binary.architecture)")
-            debug("Sections: \(binary.sections.count), Symbols: \(binary.symbols.count)")
+            // Use continuation with explicit GCD for guaranteed background execution
+            let result: (BinaryFile, [Symbol], [Symbol], [Symbol], [Function], [UInt64: Symbol], [String: Symbol], [UInt64: Function], [StringReference]) = try await withCheckedThrowingContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        // Load binary on background thread
+                        let binary = try loader.loadSync(from: url)
 
-            // Set the current file first
-            self.currentFile = binary
-            debug("currentFile set")
+                        // Process symbols
+                        let imports = binary.symbols.filter { $0.isImport }
+                        let exports = binary.symbols.filter { $0.isExport }
+                        let symbols = binary.symbols
 
-            // Get first code section
-            self.selectedSection = binary.sections.first { $0.containsCode }
-            debug("Selected section: \(selectedSection?.name ?? "none") (flags: \(String(format: "0x%X", selectedSection?.flags ?? 0)))")
+                        // Get functions from symbols
+                        let functions = binary.symbols
+                            .filter { $0.type == .function && $0.address != 0 }
+                            .map { Function(name: $0.name, startAddress: $0.address, endAddress: $0.address + max($0.size, 4)) }
+                            .sorted { $0.startAddress < $1.startAddress }
 
-            // Extract symbols
-            loadingMessage = "Processing symbols..."
-            loadingProgress = 0.5
-            self.imports = binary.symbols.filter { $0.isImport }
-            self.exports = binary.symbols.filter { $0.isExport }
-            self.symbols = binary.symbols
-            debug("Symbols processed: \(symbols.count)")
+                        // Build lookup caches
+                        let symbolsByAddress = symbols.reduce(into: [UInt64: Symbol]()) { dict, symbol in
+                            if symbol.address != 0 && dict[symbol.address] == nil {
+                                dict[symbol.address] = symbol
+                            }
+                        }
+                        let symbolsByName = symbols.reduce(into: [String: Symbol]()) { dict, symbol in
+                            if dict[symbol.name] == nil {
+                                dict[symbol.name] = symbol
+                            }
+                        }
+                        let functionsByAddress = functions.reduce(into: [UInt64: Function]()) { dict, func_ in
+                            if dict[func_.startAddress] == nil {
+                                dict[func_.startAddress] = func_
+                            }
+                        }
 
-            // Get functions from symbols
-            loadingMessage = "Extracting functions..."
-            loadingProgress = 0.7
-            self.functions = binary.symbols
-                .filter { $0.type == .function && $0.address != 0 }
-                .map { Function(name: $0.name, startAddress: $0.address, endAddress: $0.address + max($0.size, 4)) }
-                .sorted { $0.startAddress < $1.startAddress }
-            debug("Functions: \(functions.count)")
+                        // Extract strings
+                        let strings = strAnalyzer.analyze(binary: binary)
 
-            // Build lookup caches for O(1) access (keep first occurrence for duplicates)
-            loadingMessage = "Building lookup caches..."
-            self.symbolsByAddress = symbols.reduce(into: [:]) { dict, symbol in
-                if symbol.address != 0 && dict[symbol.address] == nil {
-                    dict[symbol.address] = symbol
-                }
-            }
-            self.symbolsByName = symbols.reduce(into: [:]) { dict, symbol in
-                if dict[symbol.name] == nil {
-                    dict[symbol.name] = symbol
-                }
-            }
-            self.functionsByAddress = functions.reduce(into: [:]) { dict, func_ in
-                if dict[func_.startAddress] == nil {
-                    dict[func_.startAddress] = func_
+                        continuation.resume(returning: (binary, imports, exports, symbols, functions, symbolsByAddress, symbolsByName, functionsByAddress, strings))
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
                 }
             }
 
-            // Extract strings
-            loadingMessage = "Extracting strings..."
+            // Update UI on main thread
+            loadingMessage = "Finalizing..."
             loadingProgress = 0.9
-            self.strings = stringAnalyzer.analyze(binary: binary)
-            debug("Strings: \(strings.count)")
+
+            let (binary, imports, exports, symbols, functions, symbolsByAddress, symbolsByName, functionsByAddress, strings) = result
+
+            self.currentFile = binary
+            self.selectedSection = binary.sections.first { $0.containsCode }
+            self.imports = imports
+            self.exports = exports
+            self.symbols = symbols
+            self.functions = functions
+            self.symbolsByAddress = symbolsByAddress
+            self.symbolsByName = symbolsByName
+            self.functionsByAddress = functionsByAddress
+            self.strings = strings
 
             // Initialize patcher
             self.patcher = BinaryPatcher(binary: binary)
@@ -214,7 +224,6 @@ class AppState: ObservableObject {
             loadingProgress = 1.0
             loadingMessage = "Ready"
             isLoading = false
-            debug("Loading complete! isLoading=\(isLoading)")
 
         } catch {
             debug("ERROR: \(error)")
@@ -608,6 +617,12 @@ class AppState: ObservableObject {
         guard let function = selectedFunction,
               let binary = currentFile else { return }
 
+        // Check if this is a Java class file
+        if let javaClasses = binary.javaClasses, !javaClasses.isEmpty {
+            decompileJavaMethod(function: function, javaClasses: javaClasses)
+            return
+        }
+
         Task {
             let instructions = await disassembleFunction(function)
             decompilerOutput = decompiler.decompile(
@@ -615,6 +630,52 @@ class AppState: ObservableObject {
                 instructions: instructions,
                 binary: binary
             )
+        }
+    }
+
+    private func decompileJavaMethod(function: Function, javaClasses: [JARLoader.JavaClass]) {
+        let functionName = function.name
+
+        // Find matching class and method - use exact matching
+        for javaClass in javaClasses {
+            let className = javaClass.thisClass.replacingOccurrences(of: "/", with: ".")
+
+            for method in javaClass.methods {
+                let methodFullName = "\(className).\(method.name)\(method.descriptor)"
+
+                if methodFullName == functionName {
+                    // Found the exact method - decompile just this method
+                    let decompiledMethod = javaDecompiler.decompileMethod(method, in: javaClass)
+
+                    var output = "// Function at 0x\(String(format: "%X", function.startAddress))\n"
+                    output += "// Size: \(method.code?.code.count ?? 0) bytes (bytecode)\n"
+                    output += "// Class: \(className)\n"
+                    output += "// Method: \(method.name)\(method.descriptor)\n\n"
+                    output += "\(decompiledMethod.signature) {\n"
+
+                    let bodyLines = decompiledMethod.body.split(separator: "\n", omittingEmptySubsequences: false)
+                    for line in bodyLines {
+                        if !line.isEmpty {
+                            output += "    \(line)\n"
+                        } else {
+                            output += "\n"
+                        }
+                    }
+                    output += "}\n"
+
+                    decompilerOutput = output
+                    return
+                }
+            }
+        }
+
+        // Fallback: couldn't find the method
+        decompilerOutput = "// Could not find Java method for: \(functionName)\n// Available methods in loaded classes:\n"
+        for javaClass in javaClasses.prefix(5) {
+            let className = javaClass.thisClass.replacingOccurrences(of: "/", with: ".")
+            for method in javaClass.methods.prefix(3) {
+                decompilerOutput += "//   \(className).\(method.name)\(method.descriptor)\n"
+            }
         }
     }
 

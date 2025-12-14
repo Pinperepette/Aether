@@ -90,8 +90,40 @@ actor DisassemblerEngine {
         var rexX = false
         var rexB = false
 
+        // SSE/AVX prefix tracking
+        var hasOperandSizePrefix = false  // 0x66
+        var hasRepnePrefix = false        // 0xF2
+        var hasRepPrefix = false          // 0xF3
+
+        // Check for legacy prefixes (0x66, 0xF2, 0xF3)
+        while idx < bytes.count {
+            switch bytes[idx] {
+            case 0x66:
+                hasOperandSizePrefix = true
+                idx += 1
+            case 0xF2:
+                hasRepnePrefix = true
+                idx += 1
+            case 0xF3:
+                hasRepPrefix = true
+                idx += 1
+            case 0x2E, 0x3E, 0x26, 0x64, 0x65, 0x36:  // Segment overrides
+                idx += 1
+            default:
+                break
+            }
+            if idx >= bytes.count { return nil }
+            if bytes[idx] != 0x66 && bytes[idx] != 0xF2 && bytes[idx] != 0xF3 &&
+               bytes[idx] != 0x2E && bytes[idx] != 0x3E && bytes[idx] != 0x26 &&
+               bytes[idx] != 0x64 && bytes[idx] != 0x65 && bytes[idx] != 0x36 {
+                break
+            }
+        }
+
+        let prefixCount = idx
+
         // Check for REX prefix (0x40-0x4F)
-        if bytes[idx] >= 0x40 && bytes[idx] <= 0x4F {
+        if idx < bytes.count && bytes[idx] >= 0x40 && bytes[idx] <= 0x4F {
             hasRex = true
             rexW = (bytes[idx] & 0x08) != 0
             rexR = (bytes[idx] & 0x04) != 0
@@ -101,8 +133,18 @@ actor DisassemblerEngine {
             guard idx < bytes.count else { return nil }
         }
 
+        // Check for VEX prefix (AVX)
+        if idx < bytes.count && (bytes[idx] == 0xC4 || bytes[idx] == 0xC5) {
+            return decodeVEXInstruction(bytes: bytes, startIdx: idx, address: address)
+        }
+
         let opcode = bytes[idx]
         idx += 1
+
+        // FPU instructions (x87) - 0xD8-0xDF
+        if opcode >= 0xD8 && opcode <= 0xDF {
+            return decodeFPUInstruction(bytes: bytes, opcodeIdx: idx - 1, prefixCount: prefixCount)
+        }
 
         // Decode based on opcode
         switch opcode {
@@ -198,18 +240,484 @@ actor DisassemblerEngine {
                 for i in 0..<4 {
                     rel |= Int32(bytes[idx + i]) << (i * 8)
                 }
-                let target = UInt64(Int64(address) + Int64(6 + (hasRex ? 1 : 0)) + Int64(rel))
+                let target = UInt64(Int64(address) + Int64(6 + prefixCount + (hasRex ? 1 : 0)) + Int64(rel))
                 let cond = conditionCode(Int(opcode2 - 0x80))
-                return ("j\(cond)", formatAddress(target), 6 + (hasRex ? 1 : 0), .conditionalJump, target)
+                return ("j\(cond)", formatAddress(target), 6 + prefixCount + (hasRex ? 1 : 0), .conditionalJump, target)
 
             // SYSCALL
             case 0x05:
-                return ("syscall", "", 2 + (hasRex ? 1 : 0), .syscall, nil)
+                return ("syscall", "", 2 + prefixCount + (hasRex ? 1 : 0), .syscall, nil)
 
             // NOP (multi-byte)
             case 0x1F:
                 // Variable length NOP, simplified handling
-                return ("nop", "", 3 + (hasRex ? 1 : 0), .nop, nil)
+                guard idx < bytes.count else { return nil }
+                let modrm = bytes[idx]
+                let mod = (modrm >> 6) & 0x03
+                var nopSize = 3 + prefixCount + (hasRex ? 1 : 0)
+                if mod == 0x01 { nopSize += 1 }
+                else if mod == 0x02 { nopSize += 4 }
+                return ("nop", "", nopSize, .nop, nil)
+
+            // MOVZX r32/64, r/m8
+            case 0xB6:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRM(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB, rexW: rexW, is64: true, rmSize: 8)
+                return ("movzx", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // MOVZX r32/64, r/m16
+            case 0xB7:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRM(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB, rexW: rexW, is64: true, rmSize: 16)
+                return ("movzx", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // MOVSX r32/64, r/m8
+            case 0xBE:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRM(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB, rexW: rexW, is64: true, rmSize: 8)
+                return ("movsx", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // MOVSX r32/64, r/m16
+            case 0xBF:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRM(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB, rexW: rexW, is64: true, rmSize: 16)
+                return ("movsx", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // IMUL r, r/m
+            case 0xAF:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRM(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB, rexW: rexW, is64: true)
+                return ("imul", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+
+            // CMOV conditional moves
+            case 0x40...0x4F:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRM(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB, rexW: rexW, is64: true)
+                let cond = conditionCode(Int(opcode2 - 0x40))
+                return ("cmov\(cond)", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // SETcc
+            case 0x90...0x9F:
+                guard idx < bytes.count else { return nil }
+                let modrm = bytes[idx]
+                let rm = modrm & 0x07
+                let cond = conditionCode(Int(opcode2 - 0x90))
+                let rmName = registerName8(Int(rm) + (rexB ? 8 : 0))
+                return ("set\(cond)", rmName, 3 + prefixCount + (hasRex ? 1 : 0), .other, nil)
+
+            // SSE/SSE2 Instructions
+            // MOVAPS/MOVAPD xmm, xmm/m128
+            case 0x28:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem = hasOperandSizePrefix ? "movapd" : "movaps"
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // MOVAPS/MOVAPD xmm/m128, xmm
+            case 0x29:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem = hasOperandSizePrefix ? "movapd" : "movaps"
+                return (mnem, "\(rmOp), \(regOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // MOVUPS/MOVUPD xmm, xmm/m128
+            case 0x10:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "movss" }
+                else if hasRepnePrefix { mnem = "movsd" }
+                else if hasOperandSizePrefix { mnem = "movupd" }
+                else { mnem = "movups" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // MOVUPS/MOVUPD xmm/m128, xmm
+            case 0x11:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "movss" }
+                else if hasRepnePrefix { mnem = "movsd" }
+                else if hasOperandSizePrefix { mnem = "movupd" }
+                else { mnem = "movups" }
+                return (mnem, "\(rmOp), \(regOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // MOVLPS/MOVLPD
+            case 0x12:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem = hasOperandSizePrefix ? "movlpd" : "movlps"
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // MOVHPS/MOVHPD
+            case 0x16:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem = hasOperandSizePrefix ? "movhpd" : "movhps"
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // MOVD/MOVQ xmm, r/m32/64
+            case 0x6E:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmmGpr(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB, rexW: rexW)
+                let mnem = rexW ? "movq" : "movd"
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // MOVD/MOVQ r/m32/64, xmm
+            case 0x7E:
+                guard idx < bytes.count else { return nil }
+                if hasRepPrefix {
+                    // MOVQ xmm, xmm/m64
+                    let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                    return ("movq", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+                } else {
+                    let (regOp, rmOp, size) = decodeModRMXmmGpr(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB, rexW: rexW)
+                    let mnem = rexW ? "movq" : "movd"
+                    return (mnem, "\(rmOp), \(regOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+                }
+
+            // MOVDQA/MOVDQU xmm, xmm/m128
+            case 0x6F:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "movdqu" }
+                else if hasOperandSizePrefix { mnem = "movdqa" }
+                else { mnem = "movq" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // MOVDQA/MOVDQU xmm/m128, xmm
+            case 0x7F:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "movdqu" }
+                else if hasOperandSizePrefix { mnem = "movdqa" }
+                else { mnem = "movq" }
+                return (mnem, "\(rmOp), \(regOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .move, nil)
+
+            // ADDPS/ADDPD/ADDSS/ADDSD
+            case 0x58:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "addss" }
+                else if hasRepnePrefix { mnem = "addsd" }
+                else if hasOperandSizePrefix { mnem = "addpd" }
+                else { mnem = "addps" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+
+            // SUBPS/SUBPD/SUBSS/SUBSD
+            case 0x5C:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "subss" }
+                else if hasRepnePrefix { mnem = "subsd" }
+                else if hasOperandSizePrefix { mnem = "subpd" }
+                else { mnem = "subps" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+
+            // MULPS/MULPD/MULSS/MULSD
+            case 0x59:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "mulss" }
+                else if hasRepnePrefix { mnem = "mulsd" }
+                else if hasOperandSizePrefix { mnem = "mulpd" }
+                else { mnem = "mulps" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+
+            // DIVPS/DIVPD/DIVSS/DIVSD
+            case 0x5E:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "divss" }
+                else if hasRepnePrefix { mnem = "divsd" }
+                else if hasOperandSizePrefix { mnem = "divpd" }
+                else { mnem = "divps" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+
+            // SQRTPS/SQRTPD/SQRTSS/SQRTSD
+            case 0x51:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "sqrtss" }
+                else if hasRepnePrefix { mnem = "sqrtsd" }
+                else if hasOperandSizePrefix { mnem = "sqrtpd" }
+                else { mnem = "sqrtps" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+
+            // MINPS/MINPD/MINSS/MINSD
+            case 0x5D:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "minss" }
+                else if hasRepnePrefix { mnem = "minsd" }
+                else if hasOperandSizePrefix { mnem = "minpd" }
+                else { mnem = "minps" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+
+            // MAXPS/MAXPD/MAXSS/MAXSD
+            case 0x5F:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "maxss" }
+                else if hasRepnePrefix { mnem = "maxsd" }
+                else if hasOperandSizePrefix { mnem = "maxpd" }
+                else { mnem = "maxps" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+
+            // ANDPS/ANDPD
+            case 0x54:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem = hasOperandSizePrefix ? "andpd" : "andps"
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+
+            // ORPS/ORPD
+            case 0x56:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem = hasOperandSizePrefix ? "orpd" : "orps"
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+
+            // XORPS/XORPD
+            case 0x57:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem = hasOperandSizePrefix ? "xorpd" : "xorps"
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+
+            // CMPPS/CMPPD/CMPSS/CMPSD
+            case 0xC2:
+                guard idx + 1 < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let imm = bytes[idx + size]
+                let mnem: String
+                if hasRepPrefix { mnem = "cmpss" }
+                else if hasRepnePrefix { mnem = "cmpsd" }
+                else if hasOperandSizePrefix { mnem = "cmppd" }
+                else { mnem = "cmpps" }
+                return (mnem, "\(regOp), \(rmOp), \(imm)", 3 + prefixCount + (hasRex ? 1 : 0) + size, .compare, nil)
+
+            // COMISS/COMISD
+            case 0x2F:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem = hasOperandSizePrefix ? "comisd" : "comiss"
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .compare, nil)
+
+            // UCOMISS/UCOMISD
+            case 0x2E:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem = hasOperandSizePrefix ? "ucomisd" : "ucomiss"
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .compare, nil)
+
+            // CVTSI2SS/CVTSI2SD
+            case 0x2A:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmmGpr(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB, rexW: rexW)
+                let mnem: String
+                if hasRepPrefix { mnem = "cvtsi2ss" }
+                else if hasRepnePrefix { mnem = "cvtsi2sd" }
+                else { mnem = "cvtpi2ps" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
+
+            // CVTSS2SI/CVTSD2SI
+            case 0x2D:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMGprXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB, rexW: rexW)
+                let mnem: String
+                if hasRepPrefix { mnem = "cvtss2si" }
+                else if hasRepnePrefix { mnem = "cvtsd2si" }
+                else { mnem = "cvtps2pi" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
+
+            // CVTTSS2SI/CVTTSD2SI
+            case 0x2C:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMGprXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB, rexW: rexW)
+                let mnem: String
+                if hasRepPrefix { mnem = "cvttss2si" }
+                else if hasRepnePrefix { mnem = "cvttsd2si" }
+                else { mnem = "cvttps2pi" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
+
+            // CVTSS2SD/CVTSD2SS
+            case 0x5A:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "cvtss2sd" }
+                else if hasRepnePrefix { mnem = "cvtsd2ss" }
+                else if hasOperandSizePrefix { mnem = "cvtpd2ps" }
+                else { mnem = "cvtps2pd" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
+
+            // CVTDQ2PS/CVTPS2DQ
+            case 0x5B:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem: String
+                if hasRepPrefix { mnem = "cvttps2dq" }
+                else if hasOperandSizePrefix { mnem = "cvtps2dq" }
+                else { mnem = "cvtdq2ps" }
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
+
+            // PXOR
+            case 0xEF:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("pxor", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+
+            // POR
+            case 0xEB:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("por", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+
+            // PAND
+            case 0xDB:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("pand", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+
+            // PANDN
+            case 0xDF:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("pandn", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+
+            // PADDB/PADDW/PADDD/PADDQ
+            case 0xFC:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("paddb", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+            case 0xFD:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("paddw", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+            case 0xFE:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("paddd", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+            case 0xD4:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("paddq", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+
+            // PSUBB/PSUBW/PSUBD/PSUBQ
+            case 0xF8:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("psubb", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+            case 0xF9:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("psubw", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+            case 0xFA:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("psubd", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+            case 0xFB:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("psubq", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+
+            // PMULLW/PMULLD
+            case 0xD5:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("pmullw", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .arithmetic, nil)
+
+            // PCMPEQB/PCMPEQW/PCMPEQD
+            case 0x74:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("pcmpeqb", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .compare, nil)
+            case 0x75:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("pcmpeqw", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .compare, nil)
+            case 0x76:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("pcmpeqd", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .compare, nil)
+
+            // PUNPCKLBW/PUNPCKLWD/PUNPCKLDQ/PUNPCKLQDQ
+            case 0x60:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("punpcklbw", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
+            case 0x61:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("punpcklwd", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
+            case 0x62:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("punpckldq", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
+            case 0x6C:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("punpcklqdq", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
+
+            // PSLLW/PSLLD/PSLLQ
+            case 0xF1:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("psllw", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+            case 0xF2:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("pslld", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+            case 0xF3:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("psllq", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+
+            // PSRLW/PSRLD/PSRLQ
+            case 0xD1:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("psrlw", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+            case 0xD2:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("psrld", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+            case 0xD3:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                return ("psrlq", "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .logic, nil)
+
+            // SHUFPS/SHUFPD
+            case 0xC6:
+                guard idx + 1 < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let imm = bytes[idx + size]
+                let mnem = hasOperandSizePrefix ? "shufpd" : "shufps"
+                return (mnem, "\(regOp), \(rmOp), \(imm)", 3 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
+
+            // UNPCKLPS/UNPCKLPD
+            case 0x14:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem = hasOperandSizePrefix ? "unpcklpd" : "unpcklps"
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
+
+            // UNPCKHPS/UNPCKHPD
+            case 0x15:
+                guard idx < bytes.count else { return nil }
+                let (regOp, rmOp, size) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+                let mnem = hasOperandSizePrefix ? "unpckhpd" : "unpckhps"
+                return (mnem, "\(regOp), \(rmOp)", 2 + prefixCount + (hasRex ? 1 : 0) + size, .other, nil)
 
             default:
                 return nil
@@ -1075,6 +1583,11 @@ actor DisassemblerEngine {
 
     // MARK: - Helpers
 
+    private func xmmRegisterName(_ reg: Int, useYmm: Bool = false) -> String {
+        guard reg >= 0 && reg < 32 else { return "xmm\(reg)" }
+        return useYmm ? "ymm\(reg)" : "xmm\(reg)"
+    }
+
     private func registerName64(_ reg: Int, wide: Bool = true) -> String {
         if reg == 31 {
             return wide ? "sp" : "esp"
@@ -1125,5 +1638,575 @@ actor DisassemblerEngine {
             return Int64(bitPattern: UInt64(value) | mask)
         }
         return Int64(value)
+    }
+
+    private func registerName8(_ reg: Int) -> String {
+        let regs = ["al", "cl", "dl", "bl", "spl", "bpl", "sil", "dil",
+                    "r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b"]
+        guard reg >= 0 && reg < regs.count else { return "r\(reg)b" }
+        return regs[reg]
+    }
+
+    // MARK: - ModRM Decoding for General Purpose Registers
+
+    private func decodeModRM(bytes: [UInt8], idx: Int, rexR: Bool, rexB: Bool, rexW: Bool, is64: Bool, rmSize: Int = 0) -> (String, String, Int) {
+        guard idx < bytes.count else { return ("?", "?", 0) }
+
+        let modrm = bytes[idx]
+        let mod = (modrm >> 6) & 0x03
+        let reg = Int((modrm >> 3) & 0x07) + (rexR ? 8 : 0)
+        let rm = Int(modrm & 0x07) + (rexB ? 8 : 0)
+
+        let regName = registerName64(reg, wide: rexW || is64)
+        var size = 1
+
+        if mod == 0x03 {
+            // Register direct
+            let rmName: String
+            if rmSize == 8 {
+                rmName = registerName8(rm)
+            } else if rmSize == 16 {
+                rmName = registerName16(rm)
+            } else {
+                rmName = registerName64(rm, wide: rexW || is64)
+            }
+            return (regName, rmName, size)
+        }
+
+        // Memory operand
+        var rmOperand = ""
+        let baseRm = Int(modrm & 0x07)
+
+        if baseRm == 0x04 {
+            // SIB byte follows
+            guard idx + 1 < bytes.count else { return (regName, "[?]", size) }
+            let sib = bytes[idx + 1]
+            size += 1
+            rmOperand = decodeSIB(sib: sib, mod: mod, bytes: bytes, idx: idx + 2, rexB: rexB)
+            if mod == 0x01 { size += 1 }
+            else if mod == 0x02 { size += 4 }
+        } else if mod == 0x00 && baseRm == 0x05 {
+            // RIP-relative
+            guard idx + 4 < bytes.count else { return (regName, "[rip]", size) }
+            var disp: Int32 = 0
+            for i in 0..<4 {
+                disp |= Int32(bytes[idx + 1 + i]) << (i * 8)
+            }
+            size += 4
+            rmOperand = String(format: "[rip + 0x%X]", disp)
+        } else if mod == 0x01 {
+            guard idx + 1 < bytes.count else { return (regName, "[?]", size) }
+            let disp = Int(Int8(bitPattern: bytes[idx + 1]))
+            size += 1
+            let baseReg = registerName64(rm)
+            if disp >= 0 {
+                rmOperand = "[\(baseReg) + \(disp)]"
+            } else {
+                rmOperand = "[\(baseReg) - \(-disp)]"
+            }
+        } else if mod == 0x02 {
+            guard idx + 4 < bytes.count else { return (regName, "[?]", size) }
+            var disp: Int32 = 0
+            for i in 0..<4 {
+                disp |= Int32(bytes[idx + 1 + i]) << (i * 8)
+            }
+            size += 4
+            let baseReg = registerName64(rm)
+            rmOperand = String(format: "[\(baseReg) + 0x%X]", disp)
+        } else {
+            rmOperand = "[\(registerName64(rm))]"
+        }
+
+        return (regName, rmOperand, size)
+    }
+
+    private func registerName16(_ reg: Int) -> String {
+        let regs = ["ax", "cx", "dx", "bx", "sp", "bp", "si", "di",
+                    "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w"]
+        guard reg >= 0 && reg < regs.count else { return "r\(reg)w" }
+        return regs[reg]
+    }
+
+    private func decodeSIB(sib: UInt8, mod: UInt8, bytes: [UInt8], idx: Int, rexB: Bool) -> String {
+        let scale = 1 << ((sib >> 6) & 0x03)
+        let index = Int((sib >> 3) & 0x07)
+        let base = Int(sib & 0x07) + (rexB ? 8 : 0)
+
+        var result = "["
+
+        if base == 5 && mod == 0x00 {
+            // disp32 only
+            if idx + 3 < bytes.count {
+                var disp: Int32 = 0
+                for i in 0..<4 {
+                    disp |= Int32(bytes[idx + i]) << (i * 8)
+                }
+                result += String(format: "0x%X", disp)
+            }
+        } else {
+            result += registerName64(base)
+        }
+
+        if index != 4 {
+            let indexReg = registerName64(index)
+            if result.count > 1 {
+                result += " + "
+            }
+            if scale > 1 {
+                result += "\(indexReg)*\(scale)"
+            } else {
+                result += indexReg
+            }
+        }
+
+        result += "]"
+        return result
+    }
+
+    // MARK: - ModRM Decoding for XMM Registers
+
+    private func decodeModRMXmm(bytes: [UInt8], idx: Int, rexR: Bool, rexB: Bool) -> (String, String, Int) {
+        guard idx < bytes.count else { return ("xmm?", "xmm?", 0) }
+
+        let modrm = bytes[idx]
+        let mod = (modrm >> 6) & 0x03
+        let reg = Int((modrm >> 3) & 0x07) + (rexR ? 8 : 0)
+        let rm = Int(modrm & 0x07) + (rexB ? 8 : 0)
+
+        let regName = xmmRegisterName(reg)
+        var size = 1
+
+        if mod == 0x03 {
+            return (regName, xmmRegisterName(rm), size)
+        }
+
+        // Memory operand (same as GPR)
+        var rmOperand = ""
+        let baseRm = Int(modrm & 0x07)
+
+        if baseRm == 0x04 {
+            guard idx + 1 < bytes.count else { return (regName, "[?]", size) }
+            let sib = bytes[idx + 1]
+            size += 1
+            rmOperand = decodeSIB(sib: sib, mod: mod, bytes: bytes, idx: idx + 2, rexB: rexB)
+            if mod == 0x01 { size += 1 }
+            else if mod == 0x02 { size += 4 }
+        } else if mod == 0x00 && baseRm == 0x05 {
+            guard idx + 4 < bytes.count else { return (regName, "[rip]", size) }
+            var disp: Int32 = 0
+            for i in 0..<4 {
+                disp |= Int32(bytes[idx + 1 + i]) << (i * 8)
+            }
+            size += 4
+            rmOperand = String(format: "[rip + 0x%X]", disp)
+        } else if mod == 0x01 {
+            guard idx + 1 < bytes.count else { return (regName, "[?]", size) }
+            let disp = Int(Int8(bitPattern: bytes[idx + 1]))
+            size += 1
+            let baseReg = registerName64(Int(modrm & 0x07) + (rexB ? 8 : 0))
+            if disp >= 0 {
+                rmOperand = "[\(baseReg) + \(disp)]"
+            } else {
+                rmOperand = "[\(baseReg) - \(-disp)]"
+            }
+        } else if mod == 0x02 {
+            guard idx + 4 < bytes.count else { return (regName, "[?]", size) }
+            var disp: Int32 = 0
+            for i in 0..<4 {
+                disp |= Int32(bytes[idx + 1 + i]) << (i * 8)
+            }
+            size += 4
+            let baseReg = registerName64(Int(modrm & 0x07) + (rexB ? 8 : 0))
+            rmOperand = String(format: "[\(baseReg) + 0x%X]", disp)
+        } else {
+            rmOperand = "[\(registerName64(Int(modrm & 0x07) + (rexB ? 8 : 0)))]"
+        }
+
+        return (regName, rmOperand, size)
+    }
+
+    private func decodeModRMXmmGpr(bytes: [UInt8], idx: Int, rexR: Bool, rexB: Bool, rexW: Bool) -> (String, String, Int) {
+        guard idx < bytes.count else { return ("xmm?", "?", 0) }
+
+        let modrm = bytes[idx]
+        let mod = (modrm >> 6) & 0x03
+        let reg = Int((modrm >> 3) & 0x07) + (rexR ? 8 : 0)
+        let rm = Int(modrm & 0x07) + (rexB ? 8 : 0)
+
+        let xmmName = xmmRegisterName(reg)
+        var size = 1
+
+        if mod == 0x03 {
+            let gprName = registerName64(rm, wide: rexW)
+            return (xmmName, gprName, size)
+        }
+
+        // Memory operand
+        let (_, rmOperand, extraSize) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+        return (xmmName, rmOperand, extraSize)
+    }
+
+    private func decodeModRMGprXmm(bytes: [UInt8], idx: Int, rexR: Bool, rexB: Bool, rexW: Bool) -> (String, String, Int) {
+        guard idx < bytes.count else { return ("?", "xmm?", 0) }
+
+        let modrm = bytes[idx]
+        let mod = (modrm >> 6) & 0x03
+        let reg = Int((modrm >> 3) & 0x07) + (rexR ? 8 : 0)
+        let rm = Int(modrm & 0x07) + (rexB ? 8 : 0)
+
+        let gprName = registerName64(reg, wide: rexW)
+        var size = 1
+
+        if mod == 0x03 {
+            let xmmName = xmmRegisterName(rm)
+            return (gprName, xmmName, size)
+        }
+
+        // Memory operand
+        let (_, rmOperand, extraSize) = decodeModRMXmm(bytes: bytes, idx: idx, rexR: rexR, rexB: rexB)
+        return (gprName, rmOperand, extraSize)
+    }
+
+    // MARK: - FPU (x87) Instruction Decoding
+
+    private func decodeFPUInstruction(bytes: [UInt8], opcodeIdx: Int, prefixCount: Int) -> (String, String, Int, InstructionType, UInt64?)? {
+        guard opcodeIdx + 1 < bytes.count else { return nil }
+
+        let opcode = bytes[opcodeIdx]
+        let modrm = bytes[opcodeIdx + 1]
+        let mod = (modrm >> 6) & 0x03
+        let reg = (modrm >> 3) & 0x07
+        let rm = modrm & 0x07
+
+        let baseSize = 2 + prefixCount
+
+        // Register form (mod == 11)
+        if mod == 0x03 {
+            let stReg = "st(\(rm))"
+
+            switch opcode {
+            case 0xD8:
+                switch reg {
+                case 0: return ("fadd", "st(0), \(stReg)", baseSize, .arithmetic, nil)
+                case 1: return ("fmul", "st(0), \(stReg)", baseSize, .arithmetic, nil)
+                case 2: return ("fcom", stReg, baseSize, .compare, nil)
+                case 3: return ("fcomp", stReg, baseSize, .compare, nil)
+                case 4: return ("fsub", "st(0), \(stReg)", baseSize, .arithmetic, nil)
+                case 5: return ("fsubr", "st(0), \(stReg)", baseSize, .arithmetic, nil)
+                case 6: return ("fdiv", "st(0), \(stReg)", baseSize, .arithmetic, nil)
+                case 7: return ("fdivr", "st(0), \(stReg)", baseSize, .arithmetic, nil)
+                default: break
+                }
+            case 0xD9:
+                switch reg {
+                case 0: return ("fld", stReg, baseSize, .load, nil)
+                case 1: return ("fxch", stReg, baseSize, .other, nil)
+                case 4:
+                    switch rm {
+                    case 0: return ("fchs", "", baseSize, .arithmetic, nil)
+                    case 1: return ("fabs", "", baseSize, .arithmetic, nil)
+                    case 4: return ("ftst", "", baseSize, .compare, nil)
+                    case 5: return ("fxam", "", baseSize, .compare, nil)
+                    default: break
+                    }
+                case 5:
+                    switch rm {
+                    case 0: return ("fld1", "", baseSize, .load, nil)
+                    case 1: return ("fldl2t", "", baseSize, .load, nil)
+                    case 2: return ("fldl2e", "", baseSize, .load, nil)
+                    case 3: return ("fldpi", "", baseSize, .load, nil)
+                    case 4: return ("fldlg2", "", baseSize, .load, nil)
+                    case 5: return ("fldln2", "", baseSize, .load, nil)
+                    case 6: return ("fldz", "", baseSize, .load, nil)
+                    default: break
+                    }
+                case 6:
+                    switch rm {
+                    case 0: return ("f2xm1", "", baseSize, .arithmetic, nil)
+                    case 1: return ("fyl2x", "", baseSize, .arithmetic, nil)
+                    case 2: return ("fptan", "", baseSize, .arithmetic, nil)
+                    case 3: return ("fpatan", "", baseSize, .arithmetic, nil)
+                    case 4: return ("fxtract", "", baseSize, .arithmetic, nil)
+                    case 5: return ("fprem1", "", baseSize, .arithmetic, nil)
+                    case 6: return ("fdecstp", "", baseSize, .other, nil)
+                    case 7: return ("fincstp", "", baseSize, .other, nil)
+                    default: break
+                    }
+                case 7:
+                    switch rm {
+                    case 0: return ("fprem", "", baseSize, .arithmetic, nil)
+                    case 1: return ("fyl2xp1", "", baseSize, .arithmetic, nil)
+                    case 2: return ("fsqrt", "", baseSize, .arithmetic, nil)
+                    case 3: return ("fsincos", "", baseSize, .arithmetic, nil)
+                    case 4: return ("frndint", "", baseSize, .arithmetic, nil)
+                    case 5: return ("fscale", "", baseSize, .arithmetic, nil)
+                    case 6: return ("fsin", "", baseSize, .arithmetic, nil)
+                    case 7: return ("fcos", "", baseSize, .arithmetic, nil)
+                    default: break
+                    }
+                default: break
+                }
+            case 0xDA:
+                switch reg {
+                case 0: return ("fcmovb", "st(0), \(stReg)", baseSize, .move, nil)
+                case 1: return ("fcmove", "st(0), \(stReg)", baseSize, .move, nil)
+                case 2: return ("fcmovbe", "st(0), \(stReg)", baseSize, .move, nil)
+                case 3: return ("fcmovu", "st(0), \(stReg)", baseSize, .move, nil)
+                case 5:
+                    if rm == 1 { return ("fucompp", "", baseSize, .compare, nil) }
+                default: break
+                }
+            case 0xDB:
+                switch reg {
+                case 0: return ("fcmovnb", "st(0), \(stReg)", baseSize, .move, nil)
+                case 1: return ("fcmovne", "st(0), \(stReg)", baseSize, .move, nil)
+                case 2: return ("fcmovnbe", "st(0), \(stReg)", baseSize, .move, nil)
+                case 3: return ("fcmovnu", "st(0), \(stReg)", baseSize, .move, nil)
+                case 4:
+                    switch rm {
+                    case 2: return ("fclex", "", baseSize, .other, nil)
+                    case 3: return ("finit", "", baseSize, .other, nil)
+                    default: break
+                    }
+                case 5: return ("fucomi", "st(0), \(stReg)", baseSize, .compare, nil)
+                case 6: return ("fcomi", "st(0), \(stReg)", baseSize, .compare, nil)
+                default: break
+                }
+            case 0xDC:
+                switch reg {
+                case 0: return ("fadd", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                case 1: return ("fmul", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                case 4: return ("fsubr", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                case 5: return ("fsub", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                case 6: return ("fdivr", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                case 7: return ("fdiv", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                default: break
+                }
+            case 0xDD:
+                switch reg {
+                case 0: return ("ffree", stReg, baseSize, .other, nil)
+                case 2: return ("fst", stReg, baseSize, .store, nil)
+                case 3: return ("fstp", stReg, baseSize, .store, nil)
+                case 4: return ("fucom", stReg, baseSize, .compare, nil)
+                case 5: return ("fucomp", stReg, baseSize, .compare, nil)
+                default: break
+                }
+            case 0xDE:
+                switch reg {
+                case 0: return ("faddp", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                case 1: return ("fmulp", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                case 3:
+                    if rm == 1 { return ("fcompp", "", baseSize, .compare, nil) }
+                case 4: return ("fsubrp", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                case 5: return ("fsubp", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                case 6: return ("fdivrp", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                case 7: return ("fdivp", "\(stReg), st(0)", baseSize, .arithmetic, nil)
+                default: break
+                }
+            case 0xDF:
+                switch reg {
+                case 4:
+                    if rm == 0 { return ("fnstsw", "ax", baseSize, .store, nil) }
+                case 5: return ("fucomip", "st(0), \(stReg)", baseSize, .compare, nil)
+                case 6: return ("fcomip", "st(0), \(stReg)", baseSize, .compare, nil)
+                default: break
+                }
+            default:
+                break
+            }
+        } else {
+            // Memory form
+            var memSize = baseSize
+            var memOperand = ""
+
+            let baseRm = Int(rm)
+            if baseRm == 0x04 {
+                memSize += 1  // SIB
+            }
+            if mod == 0x00 && baseRm == 0x05 {
+                memSize += 4  // disp32
+                memOperand = "[rip + disp32]"
+            } else if mod == 0x01 {
+                memSize += 1  // disp8
+                memOperand = "[reg + disp8]"
+            } else if mod == 0x02 {
+                memSize += 4  // disp32
+                memOperand = "[reg + disp32]"
+            } else {
+                memOperand = "[reg]"
+            }
+
+            switch opcode {
+            case 0xD8:
+                switch reg {
+                case 0: return ("fadd", "dword ptr \(memOperand)", memSize, .arithmetic, nil)
+                case 1: return ("fmul", "dword ptr \(memOperand)", memSize, .arithmetic, nil)
+                case 2: return ("fcom", "dword ptr \(memOperand)", memSize, .compare, nil)
+                case 3: return ("fcomp", "dword ptr \(memOperand)", memSize, .compare, nil)
+                case 4: return ("fsub", "dword ptr \(memOperand)", memSize, .arithmetic, nil)
+                case 5: return ("fsubr", "dword ptr \(memOperand)", memSize, .arithmetic, nil)
+                case 6: return ("fdiv", "dword ptr \(memOperand)", memSize, .arithmetic, nil)
+                case 7: return ("fdivr", "dword ptr \(memOperand)", memSize, .arithmetic, nil)
+                default: break
+                }
+            case 0xD9:
+                switch reg {
+                case 0: return ("fld", "dword ptr \(memOperand)", memSize, .load, nil)
+                case 2: return ("fst", "dword ptr \(memOperand)", memSize, .store, nil)
+                case 3: return ("fstp", "dword ptr \(memOperand)", memSize, .store, nil)
+                case 4: return ("fldenv", memOperand, memSize, .load, nil)
+                case 5: return ("fldcw", "word ptr \(memOperand)", memSize, .load, nil)
+                case 6: return ("fnstenv", memOperand, memSize, .store, nil)
+                case 7: return ("fnstcw", "word ptr \(memOperand)", memSize, .store, nil)
+                default: break
+                }
+            case 0xDB:
+                switch reg {
+                case 0: return ("fild", "dword ptr \(memOperand)", memSize, .load, nil)
+                case 1: return ("fisttp", "dword ptr \(memOperand)", memSize, .store, nil)
+                case 2: return ("fist", "dword ptr \(memOperand)", memSize, .store, nil)
+                case 3: return ("fistp", "dword ptr \(memOperand)", memSize, .store, nil)
+                case 5: return ("fld", "tbyte ptr \(memOperand)", memSize, .load, nil)
+                case 7: return ("fstp", "tbyte ptr \(memOperand)", memSize, .store, nil)
+                default: break
+                }
+            case 0xDC:
+                switch reg {
+                case 0: return ("fadd", "qword ptr \(memOperand)", memSize, .arithmetic, nil)
+                case 1: return ("fmul", "qword ptr \(memOperand)", memSize, .arithmetic, nil)
+                case 2: return ("fcom", "qword ptr \(memOperand)", memSize, .compare, nil)
+                case 3: return ("fcomp", "qword ptr \(memOperand)", memSize, .compare, nil)
+                case 4: return ("fsub", "qword ptr \(memOperand)", memSize, .arithmetic, nil)
+                case 5: return ("fsubr", "qword ptr \(memOperand)", memSize, .arithmetic, nil)
+                case 6: return ("fdiv", "qword ptr \(memOperand)", memSize, .arithmetic, nil)
+                case 7: return ("fdivr", "qword ptr \(memOperand)", memSize, .arithmetic, nil)
+                default: break
+                }
+            case 0xDD:
+                switch reg {
+                case 0: return ("fld", "qword ptr \(memOperand)", memSize, .load, nil)
+                case 1: return ("fisttp", "qword ptr \(memOperand)", memSize, .store, nil)
+                case 2: return ("fst", "qword ptr \(memOperand)", memSize, .store, nil)
+                case 3: return ("fstp", "qword ptr \(memOperand)", memSize, .store, nil)
+                case 4: return ("frstor", memOperand, memSize, .load, nil)
+                case 6: return ("fnsave", memOperand, memSize, .store, nil)
+                case 7: return ("fnstsw", "word ptr \(memOperand)", memSize, .store, nil)
+                default: break
+                }
+            case 0xDF:
+                switch reg {
+                case 0: return ("fild", "word ptr \(memOperand)", memSize, .load, nil)
+                case 1: return ("fisttp", "word ptr \(memOperand)", memSize, .store, nil)
+                case 2: return ("fist", "word ptr \(memOperand)", memSize, .store, nil)
+                case 3: return ("fistp", "word ptr \(memOperand)", memSize, .store, nil)
+                case 4: return ("fbld", "tbyte ptr \(memOperand)", memSize, .load, nil)
+                case 5: return ("fild", "qword ptr \(memOperand)", memSize, .load, nil)
+                case 6: return ("fbstp", "tbyte ptr \(memOperand)", memSize, .store, nil)
+                case 7: return ("fistp", "qword ptr \(memOperand)", memSize, .store, nil)
+                default: break
+                }
+            default:
+                break
+            }
+        }
+
+        return (String(format: "fpu_%02X_%02X", opcode, modrm), "", baseSize, .other, nil)
+    }
+
+    // MARK: - VEX (AVX) Instruction Decoding
+
+    private func decodeVEXInstruction(bytes: [UInt8], startIdx: Int, address: UInt64) -> (String, String, Int, InstructionType, UInt64?)? {
+        guard startIdx < bytes.count else { return nil }
+
+        let vexByte = bytes[startIdx]
+        var idx = startIdx + 1
+
+        var vexR = true
+        var vexX = true
+        var vexB = true
+        var vexW = false
+        var vexL = false   // 0 = 128-bit, 1 = 256-bit
+        var vexVVVV = 0
+        var mapSelect = 1  // Default to 0F map
+
+        if vexByte == 0xC5 {
+            // 2-byte VEX
+            guard idx < bytes.count else { return nil }
+            let vex1 = bytes[idx]
+            idx += 1
+
+            vexR = (vex1 & 0x80) == 0
+            vexVVVV = Int((~vex1 >> 3) & 0x0F)
+            vexL = (vex1 & 0x04) != 0
+            let pp = vex1 & 0x03
+            _ = pp  // prefix encoding
+        } else if vexByte == 0xC4 {
+            // 3-byte VEX
+            guard idx + 1 < bytes.count else { return nil }
+            let vex1 = bytes[idx]
+            let vex2 = bytes[idx + 1]
+            idx += 2
+
+            vexR = (vex1 & 0x80) == 0
+            vexX = (vex1 & 0x40) == 0
+            vexB = (vex1 & 0x20) == 0
+            mapSelect = Int(vex1 & 0x1F)
+
+            vexW = (vex2 & 0x80) != 0
+            vexVVVV = Int((~vex2 >> 3) & 0x0F)
+            vexL = (vex2 & 0x04) != 0
+            let pp = vex2 & 0x03
+            _ = pp
+        } else {
+            return nil
+        }
+
+        guard idx < bytes.count else { return nil }
+        let opcode = bytes[idx]
+        idx += 1
+
+        let ymmPrefix = vexL ? "y" : "x"
+        let vexSize = idx - startIdx
+
+        // Simplified AVX instruction decoding
+        guard idx < bytes.count else { return nil }
+        let modrm = bytes[idx]
+        let mod = (modrm >> 6) & 0x03
+        let reg = Int((modrm >> 3) & 0x07) + (vexR ? 0 : 8)
+        let rm = Int(modrm & 0x07) + (vexB ? 0 : 8)
+
+        let destReg = "\(ymmPrefix)mm\(reg)"
+        let srcReg = vexVVVV < 16 ? "\(ymmPrefix)mm\(vexVVVV)" : "\(ymmPrefix)mm0"
+        let rmReg = mod == 0x03 ? "\(ymmPrefix)mm\(rm)" : "[mem]"
+
+        var instSize = vexSize + 1
+
+        if mod != 0x03 {
+            // Memory operand, simplified
+            if mod == 0x01 { instSize += 1 }
+            else if mod == 0x02 { instSize += 4 }
+            if (modrm & 0x07) == 0x04 { instSize += 1 }  // SIB
+        }
+
+        // Common AVX instructions
+        switch opcode {
+        case 0x58: return ("vaddps", "\(destReg), \(srcReg), \(rmReg)", instSize, .arithmetic, nil)
+        case 0x59: return ("vmulps", "\(destReg), \(srcReg), \(rmReg)", instSize, .arithmetic, nil)
+        case 0x5C: return ("vsubps", "\(destReg), \(srcReg), \(rmReg)", instSize, .arithmetic, nil)
+        case 0x5E: return ("vdivps", "\(destReg), \(srcReg), \(rmReg)", instSize, .arithmetic, nil)
+        case 0x51: return ("vsqrtps", "\(destReg), \(rmReg)", instSize, .arithmetic, nil)
+        case 0x28: return ("vmovaps", "\(destReg), \(rmReg)", instSize, .move, nil)
+        case 0x29: return ("vmovaps", "\(rmReg), \(destReg)", instSize, .move, nil)
+        case 0x10: return ("vmovups", "\(destReg), \(rmReg)", instSize, .move, nil)
+        case 0x11: return ("vmovups", "\(rmReg), \(destReg)", instSize, .move, nil)
+        case 0x54: return ("vandps", "\(destReg), \(srcReg), \(rmReg)", instSize, .logic, nil)
+        case 0x56: return ("vorps", "\(destReg), \(srcReg), \(rmReg)", instSize, .logic, nil)
+        case 0x57: return ("vxorps", "\(destReg), \(srcReg), \(rmReg)", instSize, .logic, nil)
+        case 0x6F: return ("vmovdqa", "\(destReg), \(rmReg)", instSize, .move, nil)
+        case 0x7F: return ("vmovdqa", "\(rmReg), \(destReg)", instSize, .move, nil)
+        case 0xEF: return ("vpxor", "\(destReg), \(srcReg), \(rmReg)", instSize, .logic, nil)
+        default:
+            return (String(format: "vex_%02X", opcode), "\(destReg), \(srcReg), \(rmReg)", instSize, .other, nil)
+        }
     }
 }

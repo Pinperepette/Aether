@@ -186,7 +186,6 @@ class JARLoader: BinaryLoaderProtocol {
 
     func loadJAR(from url: URL) throws -> BinaryFile {
         let data = try Data(contentsOf: url)
-        fputs(">>> [JAR] Loading JAR file using unzip...\n", stderr)
 
         // Use system unzip to extract to temp directory
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -205,8 +204,6 @@ class JARLoader: BinaryLoaderProtocol {
         try process.run()
         process.waitUntilExit()
 
-        fputs(">>> [JAR] Unzip exit code: \(process.terminationStatus)\n", stderr)
-
         // Find all class files
         var classes: [JavaClass] = []
         var symbols: [Symbol] = []
@@ -219,7 +216,6 @@ class JARLoader: BinaryLoaderProtocol {
         if let manifestData = try? Data(contentsOf: manifestPath),
            let manifestString = String(data: manifestData, encoding: .utf8) {
             manifest = parseManifest(manifestData)
-            fputs(">>> [JAR] Main-Class: \(manifest["Main-Class"] ?? "none")\n", stderr)
         }
 
         // Find all .class files
@@ -231,12 +227,9 @@ class JARLoader: BinaryLoaderProtocol {
             }
         }
 
-        fputs(">>> [JAR] Found \(classFiles.count) class files\n", stderr)
-
         for fileURL in classFiles.prefix(200) { // Limit to first 200 classes for performance
             let relativePath = fileURL.path.replacingOccurrences(of: tempDir.path + "/", with: "")
             if let classData = try? Data(contentsOf: fileURL) {
-                fputs(">>> [JAR] Processing: \(relativePath) (\(classData.count) bytes)\n", stderr)
                 if let javaClass = try? parseClassFile(data: classData) {
                     classes.append(javaClass)
 
@@ -309,7 +302,6 @@ class JARLoader: BinaryLoaderProtocol {
         let jarFile = JARFile(entries: [], manifest: manifest, mainClass: manifest["Main-Class"])
         binary.jarFile = jarFile
 
-        fputs(">>> [JAR] Loaded \(classes.count) classes, \(symbols.count) symbols\n", stderr)
         return binary
     }
 
@@ -383,8 +375,6 @@ class JARLoader: BinaryLoaderProtocol {
         var manifest: [String: String] = [:]
         var offset = 0
 
-        fputs(">>> [JAR] Starting ZIP parsing, data size: \(data.count)\n", stderr)
-
         while offset < data.count - 4 {
             // Check for PK signature
             guard data[offset] == 0x50, data[offset + 1] == 0x4B else {
@@ -397,13 +387,11 @@ class JARLoader: BinaryLoaderProtocol {
 
             // Central directory header (PK\x01\x02) - stop here
             if sig3 == 0x01 && sig4 == 0x02 {
-                fputs(">>> [JAR] Reached central directory at offset \(offset)\n", stderr)
                 break
             }
 
             // End of central directory (PK\x05\x06) - stop here
             if sig3 == 0x05 && sig4 == 0x06 {
-                fputs(">>> [JAR] Reached end of central directory at offset \(offset)\n", stderr)
                 break
             }
 
@@ -415,7 +403,6 @@ class JARLoader: BinaryLoaderProtocol {
 
             // Parse local file header
             guard offset + 30 <= data.count else {
-                fputs(">>> [JAR] Header too short at offset \(offset)\n", stderr)
                 break
             }
 
@@ -424,7 +411,6 @@ class JARLoader: BinaryLoaderProtocol {
                   let uncompressedSize = data.readUInt32LE(at: offset + 22),
                   let fileNameLength = data.readUInt16LE(at: offset + 26),
                   let extraFieldLength = data.readUInt16LE(at: offset + 28) else {
-                fputs(">>> [JAR] Failed to read header fields at offset \(offset)\n", stderr)
                 break
             }
 
@@ -433,7 +419,6 @@ class JARLoader: BinaryLoaderProtocol {
             let fileNameEnd = fileNameStart + Int(fileNameLength)
 
             guard fileNameEnd <= data.count else {
-                fputs(">>> [JAR] Filename extends past end at offset \(offset)\n", stderr)
                 break
             }
 
@@ -444,7 +429,6 @@ class JARLoader: BinaryLoaderProtocol {
             let dataEnd = dataStart + Int(compressedSize)
 
             guard dataEnd <= data.count else {
-                fputs(">>> [JAR] Data extends past end: \(fileName) at \(offset), dataEnd=\(dataEnd), count=\(data.count)\n", stderr)
                 break
             }
 
@@ -456,7 +440,6 @@ class JARLoader: BinaryLoaderProtocol {
                     entryData = decompressed[...]
                 } else {
                     // Decompression failed, skip entry but continue
-                    fputs(">>> [JAR] Decompression failed for: \(fileName)\n", stderr)
                     offset = dataEnd
                     continue
                 }
@@ -479,8 +462,6 @@ class JARLoader: BinaryLoaderProtocol {
 
             offset = dataEnd
         }
-
-        fputs(">>> [JAR] Finished parsing, found \(entries.count) entries\n", stderr)
 
         let mainClass = manifest["Main-Class"]
 

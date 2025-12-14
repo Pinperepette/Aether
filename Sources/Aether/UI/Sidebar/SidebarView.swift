@@ -81,7 +81,8 @@ struct FunctionsListView: View {
             return appState.functions
         }
         return appState.functions.filter {
-            $0.displayName.localizedCaseInsensitiveContains(searchText)
+            $0.name.localizedCaseInsensitiveContains(searchText) ||
+            $0.shortDisplayName.localizedCaseInsensitiveContains(searchText)
         }
     }
 
@@ -125,7 +126,7 @@ struct FunctionRow: View {
     @State private var newName = ""
 
     var displayName: String {
-        appState.renamedFunctions[function.startAddress] ?? function.displayName
+        appState.renamedFunctions[function.startAddress] ?? function.shortDisplayName
     }
 
     var body: some View {

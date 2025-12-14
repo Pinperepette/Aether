@@ -561,7 +561,7 @@ class CallGraphViewModel: ObservableObject {
         for function in functions {
             let node = CallGraphNode(
                 address: function.startAddress,
-                name: function.displayName,
+                name: function.shortDisplayName,
                 size: Int(function.size),
                 isExternal: function.name.hasPrefix("_") && function.size < 16,
                 callers: function.callers,

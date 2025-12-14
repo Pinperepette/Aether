@@ -66,11 +66,6 @@ struct DisassemblyView: View {
                 .help("Patch conditional jumps")
                 .disabled(instructions.isEmpty)
 
-                if let func_ = appState.selectedFunction {
-                    Text(func_.displayName)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

@@ -380,9 +380,9 @@ struct SearchSheet: View {
 
         case .functions:
             results = appState.functions
-                .filter { $0.displayName.lowercased().contains(query) }
+                .filter { $0.name.lowercased().contains(query) || $0.shortDisplayName.lowercased().contains(query) }
                 .prefix(50)
-                .map { SearchResult(name: $0.displayName, address: $0.startAddress, type: "Function") }
+                .map { SearchResult(name: $0.shortDisplayName, address: $0.startAddress, type: "Function") }
 
         case .addresses:
             if let addr = UInt64(query.replacingOccurrences(of: "0x", with: ""), radix: 16) {
