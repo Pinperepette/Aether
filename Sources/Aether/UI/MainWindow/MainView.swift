@@ -93,6 +93,14 @@ struct MainView: View {
             ExportSheetView()
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $appState.showSecurityAnalysis) {
+            SecurityAnalysisView(
+                result: appState.securityAnalysisResult,
+                isLoading: appState.isAnalyzingWithAI,
+                error: appState.securityAnalysisError
+            )
+            .environmentObject(appState)
+        }
         .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted) { providers in
             handleDrop(providers: providers)
         }

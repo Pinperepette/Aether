@@ -37,6 +37,14 @@ class AppState: ObservableObject {
     @Published var showExportSheet = false
     @Published var showPseudoCode = false
     @Published var showJumpTable = false
+    @Published var showSettings = false
+    @Published var showSecurityAnalysis = false
+
+    // MARK: - AI Analysis State
+    @Published var isAnalyzingWithAI = false
+    @Published var securityAnalysisResult: SecurityAnalysisResult?
+    @Published var securityAnalysisError: String?
+    private let claudeClient = ClaudeAPIClient()
 
     // MARK: - Advanced Analysis Results
     @Published var cryptoFindings: [AdvancedCryptoDetector.CryptoFinding] = []
@@ -675,6 +683,116 @@ class AppState: ObservableObject {
             let className = javaClass.thisClass.replacingOccurrences(of: "/", with: ".")
             for method in javaClass.methods.prefix(3) {
                 decompilerOutput += "//   \(className).\(method.name)\(method.descriptor)\n"
+            }
+        }
+    }
+
+    // MARK: - AI Security Analysis
+
+    var hasClaudeAPIKey: Bool {
+        KeychainHelper.load(key: "ClaudeAPIKey") != nil
+    }
+
+    func analyzeWithAI() {
+        guard let apiKey = KeychainHelper.load(key: "ClaudeAPIKey") else {
+            securityAnalysisError = "No API key configured. Please add your Claude API key in Settings."
+            showSecurityAnalysis = true
+            return
+        }
+
+        guard let function = selectedFunction else {
+            securityAnalysisError = "Please select a function to analyze."
+            showSecurityAnalysis = true
+            return
+        }
+
+        isAnalyzingWithAI = true
+        securityAnalysisResult = nil
+        securityAnalysisError = nil
+        showSecurityAnalysis = true
+
+        Task {
+            do {
+                // Get disassembly for the function
+                let instructions = await disassembleFunction(function)
+                let disassembly = instructions.prefix(200).map { insn in
+                    String(format: "0x%llX: %@ %@", insn.address, insn.mnemonic, insn.operands)
+                }.joined(separator: "\n")
+
+                // Get relevant strings
+                let relevantStrings = strings.filter { str in
+                    str.address >= function.startAddress && str.address < function.endAddress
+                }.map { $0.value }
+
+                // Get imports
+                let importNames = imports.map { $0.name }
+
+                // Call Claude API
+                let result = try await claudeClient.analyzeSecurityAsync(
+                    functionName: function.displayName,
+                    decompiledCode: decompilerOutput,
+                    disassembly: disassembly,
+                    strings: relevantStrings + Array(strings.prefix(30).map { $0.value }),
+                    imports: importNames,
+                    apiKey: apiKey
+                )
+
+                await MainActor.run {
+                    securityAnalysisResult = result
+                    isAnalyzingWithAI = false
+                }
+            } catch {
+                await MainActor.run {
+                    securityAnalysisError = error.localizedDescription
+                    isAnalyzingWithAI = false
+                }
+            }
+        }
+    }
+
+    func analyzeBinaryWithAI() {
+        guard let apiKey = KeychainHelper.load(key: "ClaudeAPIKey") else {
+            securityAnalysisError = "No API key configured. Please add your Claude API key in Settings."
+            showSecurityAnalysis = true
+            return
+        }
+
+        guard let binary = currentFile else {
+            securityAnalysisError = "No binary loaded."
+            showSecurityAnalysis = true
+            return
+        }
+
+        isAnalyzingWithAI = true
+        securityAnalysisResult = nil
+        securityAnalysisError = nil
+        showSecurityAnalysis = true
+
+        Task {
+            do {
+                let functionNames = functions.map { $0.displayName }
+                let stringValues = strings.map { $0.value }
+                let importNames = imports.map { $0.name }
+                let exportNames = exports.map { $0.name }
+
+                let result = try await claudeClient.analyzeBinaryAsync(
+                    binaryName: binary.name,
+                    functions: functionNames,
+                    strings: stringValues,
+                    imports: importNames,
+                    exports: exportNames,
+                    apiKey: apiKey
+                )
+
+                await MainActor.run {
+                    securityAnalysisResult = result
+                    isAnalyzingWithAI = false
+                }
+            } catch {
+                await MainActor.run {
+                    securityAnalysisError = error.localizedDescription
+                    isAnalyzingWithAI = false
+                }
             }
         }
     }

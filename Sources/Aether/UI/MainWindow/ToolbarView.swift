@@ -106,6 +106,60 @@ struct ToolbarView: View {
                 .disabled(appState.selectedFunction == nil)
             }
 
+            Divider()
+                .frame(height: 24)
+
+            // AI Analysis
+            HStack(spacing: 8) {
+                if appState.hasClaudeAPIKey {
+                    Menu {
+                        Button {
+                            appState.analyzeWithAI()
+                        } label: {
+                            Label("Analyze Function", systemImage: "function")
+                        }
+                        .disabled(appState.selectedFunction == nil)
+
+                        Button {
+                            appState.analyzeBinaryWithAI()
+                        } label: {
+                            Label("Analyze Binary", systemImage: "doc.viewfinder")
+                        }
+                        .disabled(appState.currentFile == nil)
+                    } label: {
+                        VStack(spacing: 2) {
+                            Image(systemName: "brain")
+                                .font(.system(size: 16))
+                                .foregroundColor(.purple)
+                            Text("AI Analysis")
+                                .font(.caption2)
+                        }
+                        .frame(minWidth: 50)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .disabled(appState.currentFile == nil)
+                } else {
+                    ToolbarButton(
+                        icon: "brain",
+                        label: "AI Analysis",
+                        shortcut: nil
+                    ) {
+                        openSettings()
+                    }
+                    .opacity(0.5)
+                }
+
+                ToolbarButton(
+                    icon: "gear",
+                    label: "Settings",
+                    shortcut: ","
+                ) {
+                    openSettings()
+                }
+            }
+
             Spacer()
 
             // Search
@@ -137,6 +191,10 @@ struct ToolbarView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(Color.sidebar)
+    }
+
+    private func openSettings() {
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
 }
 

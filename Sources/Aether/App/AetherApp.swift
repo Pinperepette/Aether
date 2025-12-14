@@ -227,8 +227,13 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Analysis", systemImage: "cpu")
                 }
+
+            AISettingsTab()
+                .tabItem {
+                    Label("AI", systemImage: "brain")
+                }
         }
-        .frame(width: 450, height: 300)
+        .frame(width: 500, height: 350)
     }
 }
 
