@@ -259,6 +259,9 @@ Three new AI features that you can use on-demand when analyzing binaries:
   <img src="img/7.png" alt="Aether - Analysis View" width="700">
 </p>
 
+<p align="center">
+  <img src="img/3.png" alt="Aether - Analysis View" width="700">
+</p>
 
 ## Installation
 
