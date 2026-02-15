@@ -22,15 +22,15 @@ struct AISettingsTab: View {
                     .font(.title2)
                     .foregroundColor(.purple)
                 VStack(alignment: .leading) {
-                    Text("AI Security Analysis")
+                    Text(translate("settings.ai.title"))
                         .font(.headline)
-                    Text("Analyze code for vulnerabilities with AI")
+                    Text(translate("settings.ai.subtitle"))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 Spacer()
                 if apiKeyConfigured {
-                    Label("Active", systemImage: "checkmark.circle.fill")
+                    Label(translate("settings.ai.active"), systemImage: "checkmark.circle.fill")
                         .foregroundColor(.green)
                         .font(.caption)
                 }
@@ -40,17 +40,17 @@ struct AISettingsTab: View {
 
             // API Key Section
             VStack(alignment: .leading, spacing: 8) {
-                Text("API Key")
+                Text(translate("settings.ai.apiKey"))
                     .font(.subheadline)
                     .fontWeight(.medium)
 
                 HStack {
                     if showAPIKey {
-                        TextField("sk-ant-...", text: $apiKey)
+                        TextField(translate("settings.ai.apiKeyPlaceholder"), text: $apiKey)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(.body, design: .monospaced))
                     } else {
-                        SecureField("sk-ant-...", text: $apiKey)
+                        SecureField(translate("settings.ai.apiKeyPlaceholder"), text: $apiKey)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(.body, design: .monospaced))
                     }
@@ -63,21 +63,21 @@ struct AISettingsTab: View {
                     .buttonStyle(.plain)
                 }
 
-                Text("Get your API key from console.anthropic.com")
+                Text(translate("settings.ai.apiKeyHelp"))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
 
             // Actions
             HStack {
-                Button("Save Key") {
+                Button(translate("settings.ai.saveKey")) {
                     saveAPIKey()
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(apiKey.isEmpty || isValidating)
 
                 if apiKeyConfigured {
-                    Button("Remove") {
+                    Button(translate("settings.ai.remove")) {
                         removeAPIKey()
                     }
                     .foregroundColor(.red)
@@ -92,7 +92,7 @@ struct AISettingsTab: View {
 
                 switch saveStatus {
                 case .success:
-                    Label("Saved!", systemImage: "checkmark.circle")
+                    Label(translate("settings.ai.saved"), systemImage: "checkmark.circle")
                         .foregroundColor(.green)
                         .font(.caption)
                 case .error(let message):
@@ -108,11 +108,11 @@ struct AISettingsTab: View {
 
             // Info
             VStack(alignment: .leading, spacing: 6) {
-                Label("Analyzes code for security vulnerabilities", systemImage: "shield.lefthalf.filled")
+                Label(translate("settings.ai.info.analyzes"), systemImage: "shield.lefthalf.filled")
                     .font(.caption)
-                Label("API key stored in macOS Keychain", systemImage: "lock.shield")
+                Label(translate("settings.ai.info.keychain"), systemImage: "lock.shield")
                     .font(.caption)
-                Label("Uses your API credits", systemImage: "dollarsign.circle")
+                Label(translate("settings.ai.info.credits"), systemImage: "dollarsign.circle")
                     .font(.caption)
             }
             .foregroundColor(.secondary)
@@ -133,7 +133,7 @@ struct AISettingsTab: View {
 
         // Validate API key format
         guard apiKey.hasPrefix("sk-ant-") else {
-            saveStatus = .error("Invalid format")
+            saveStatus = .error(translate("settings.ai.error.invalidFormat"))
             isValidating = false
             return
         }
@@ -150,7 +150,7 @@ struct AISettingsTab: View {
                 apiKey = String(repeating: "*", count: 20)
             }
         } else {
-            saveStatus = .error("Save failed")
+            saveStatus = .error(translate("settings.ai.error.saveFailed"))
         }
     }
 

@@ -134,12 +134,12 @@ struct MainView: View {
                 WelcomeView()
             }
         }
-        .alert("Error", isPresented: $appState.showError) {
-            Button("OK") {
+        .alert(translate("common.error"), isPresented: $appState.showError) {
+            Button(translate("common.ok")) {
                 appState.showError = false
             }
         } message: {
-            Text(appState.errorMessage ?? "Unknown error")
+            Text(appState.errorMessage ?? translate("common.unknownError"))
         }
     }
 
@@ -175,11 +175,11 @@ struct WelcomeView: View {
                 .font(.system(size: 64))
                 .foregroundColor(.secondary)
 
-            Text("Aether")
+            Text(translate("welcome.title"))
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Text("Drag and drop a binary file here\nor use File → Open Binary (⌘O)")
+            Text(translate("welcome.subtitle"))
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
 
@@ -253,10 +253,10 @@ struct GoToAddressSheet: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("Go to Address")
+            Text(translate("goto.title"))
                 .font(.headline)
 
-            TextField("Address (hex)", text: $addressText)
+            TextField(translate("goto.addressPlaceholder"), text: $addressText)
                 .textFieldStyle(.roundedBorder)
                 .focused($isFocused)
                 .onSubmit {
@@ -264,12 +264,12 @@ struct GoToAddressSheet: View {
                 }
 
             HStack {
-                Button("Cancel") {
+                Button(translate("common.cancel")) {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button("Go") {
+                Button(translate("common.go")) {
                     goToAddress()
                 }
                 .keyboardShortcut(.defaultAction)

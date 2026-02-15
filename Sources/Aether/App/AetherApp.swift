@@ -4,35 +4,44 @@ import SwiftUI
 struct AetherApp: App {
     @StateObject private var appState = AppState()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @AppStorage("appLanguage") private var appLanguage = AppLanguage.systemCode
 
     var body: some Scene {
         WindowGroup {
             MainView()
+                .id(appLanguage)
                 .environmentObject(appState)
+                .environment(\.locale, AppLanguage.fromStored(appLanguage).locale)
                 .preferredColorScheme(.dark)
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button(translate("about.menu.title")) {
+                    AboutWindowManager.shared.open()
+                }
+            }
+
             CommandGroup(replacing: .newItem) {
-                Button("Open Binary...") {
+                Button(translate("menu.file.openBinary")) {
                     appState.openFile()
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
-                Button("Open Project...") {
+                Button(translate("menu.file.openProject")) {
                     appState.openProject()
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button("Save Binary As...") {
+                Button(translate("menu.file.saveBinaryAs")) {
                     appState.saveFileAs()
                 }
                 .keyboardShortcut("s", modifiers: .command)
                 .disabled(appState.currentFile == nil)
 
-                Button("Save Project As...") {
+                Button(translate("menu.file.saveProjectAs")) {
                     appState.saveProjectAs()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
@@ -40,7 +49,7 @@ struct AetherApp: App {
 
                 Divider()
 
-                Button("Close") {
+                Button(translate("menu.file.close")) {
                     appState.closeFile()
                 }
                 .keyboardShortcut("w", modifiers: .command)
@@ -48,26 +57,26 @@ struct AetherApp: App {
             }
 
             CommandGroup(replacing: .undoRedo) {
-                Button("Undo") {
+                Button(translate("menu.edit.undo")) {
                     appState.undo()
                 }
                 .keyboardShortcut("z", modifiers: .command)
                 .disabled(!appState.canUndo)
 
-                Button("Redo") {
+                Button(translate("menu.edit.redo")) {
                     appState.redo()
                 }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
                 .disabled(!appState.canRedo)
             }
-            CommandMenu("Analysis") {
-                Button("Analyze All") {
+            CommandMenu(translate("menu.analysis.title")) {
+                Button(translate("menu.analysis.analyzeAll")) {
                     appState.analyzeAll()
                 }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
                 .disabled(appState.currentFile == nil)
 
-                Button("Find Functions") {
+                Button(translate("menu.analysis.findFunctions")) {
                     appState.findFunctions()
                 }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
@@ -75,19 +84,19 @@ struct AetherApp: App {
 
                 Divider()
 
-                Button("Show CFG") {
+                Button(translate("menu.analysis.showCFG")) {
                     appState.showCFG = true
                 }
                 .keyboardShortcut("g", modifiers: .command)
                 .disabled(appState.selectedFunction == nil)
 
-                Button("Decompile") {
+                Button(translate("menu.analysis.decompile")) {
                     appState.decompileCurrentFunction()
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
                 .disabled(appState.selectedFunction == nil)
 
-                Button("Generate Pseudo-Code") {
+                Button(translate("menu.analysis.generatePseudoCode")) {
                     appState.generateStructuredCode()
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
@@ -95,96 +104,96 @@ struct AetherApp: App {
 
                 Divider()
 
-                Button("Call Graph") {
+                Button(translate("menu.analysis.callGraph")) {
                     appState.showCallGraph = true
                 }
                 .keyboardShortcut("k", modifiers: .command)
                 .disabled(appState.currentFile == nil)
 
-                Button("Crypto Detection") {
+                Button(translate("menu.analysis.cryptoDetection")) {
                     appState.runCryptoDetection()
                 }
                 .disabled(appState.currentFile == nil)
 
-                Button("Deobfuscation Analysis") {
+                Button(translate("menu.analysis.deobfuscation")) {
                     appState.runDeobfuscation()
                 }
                 .disabled(appState.selectedFunction == nil)
 
-                Button("Type Recovery") {
+                Button(translate("menu.analysis.typeRecovery")) {
                     appState.runTypeRecovery()
                 }
                 .disabled(appState.selectedFunction == nil)
 
-                Button("Idiom Recognition") {
+                Button(translate("menu.analysis.idiomRecognition")) {
                     appState.runIdiomRecognition()
                 }
                 .disabled(appState.selectedFunction == nil)
 
                 Divider()
 
-                Button("Show Jump Table") {
+                Button(translate("menu.analysis.showJumpTable")) {
                     appState.showJumpTable = true
                 }
                 .keyboardShortcut("j", modifiers: [.command, .shift])
                 .disabled(appState.selectedFunction == nil)
             }
 
-            CommandMenu("Export") {
-                Button("Export to IDA Python...") {
+            CommandMenu(translate("menu.export.title")) {
+                Button(translate("menu.export.ida")) {
                     appState.showExportSheet = true
                 }
                 .disabled(appState.currentFile == nil)
 
-                Button("Export to Ghidra XML...") {
+                Button(translate("menu.export.ghidra")) {
                     exportWithFormat(.ghidraXML)
                 }
                 .disabled(appState.currentFile == nil)
 
-                Button("Export to Radare2...") {
+                Button(translate("menu.export.radare2")) {
                     exportWithFormat(.radare2)
                 }
                 .disabled(appState.currentFile == nil)
 
-                Button("Export to Binary Ninja...") {
+                Button(translate("menu.export.binaryNinja")) {
                     exportWithFormat(.binaryNinja)
                 }
                 .disabled(appState.currentFile == nil)
 
                 Divider()
 
-                Button("Export to JSON...") {
+                Button(translate("menu.export.json")) {
                     exportWithFormat(.json)
                 }
                 .disabled(appState.currentFile == nil)
 
-                Button("Export to CSV...") {
+                Button(translate("menu.export.csv")) {
                     exportWithFormat(.csv)
                 }
                 .disabled(appState.currentFile == nil)
 
-                Button("Export to HTML Report...") {
+                Button(translate("menu.export.html")) {
                     exportWithFormat(.html)
                 }
                 .disabled(appState.currentFile == nil)
 
-                Button("Export to Markdown...") {
+                Button(translate("menu.export.markdown")) {
                     exportWithFormat(.markdown)
                 }
                 .disabled(appState.currentFile == nil)
 
-                Button("Export C Header...") {
+                Button(translate("menu.export.cheader")) {
                     exportWithFormat(.cHeader)
                 }
                 .disabled(appState.currentFile == nil)
             }
-            CommandMenu("Navigate") {
-                Button("Go to Address...") {
+            CommandMenu(translate("menu.navigate.title")) {
+                Button(translate("menu.navigate.gotoAddress")) {
                     appState.showGoToAddress = true
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
 
-                Button("Search...") {
+                Button(translate("menu.navigate.search")) {
                     appState.showSearch = true
                 }
                 .keyboardShortcut("f", modifiers: .command)
@@ -193,14 +202,16 @@ struct AetherApp: App {
 
         Settings {
             SettingsView()
+                .id(appLanguage)
                 .environmentObject(appState)
+                .environment(\.locale, AppLanguage.fromStored(appLanguage).locale)
         }
     }
 
     private func exportWithFormat(_ format: ExportManager.ExportFormat) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.data]
-        panel.nameFieldStringValue = "\(appState.currentFile?.name ?? "export").\(format.fileExtension)"
+        panel.nameFieldStringValue = "\(appState.currentFile?.name ?? translate("export.defaultFileName")).\(format.fileExtension)"
 
         if panel.runModal() == .OK, let url = panel.url {
             appState.exportTo(format: format, url: url)
@@ -215,22 +226,22 @@ struct SettingsView: View {
         TabView {
             GeneralSettingsView()
                 .tabItem {
-                    Label("General", systemImage: "gear")
+                    Label(translate("settings.tab.general"), systemImage: "gear")
                 }
 
             AppearanceSettingsView()
                 .tabItem {
-                    Label("Appearance", systemImage: "paintbrush")
+                    Label(translate("settings.tab.appearance"), systemImage: "paintbrush")
                 }
 
             AnalysisSettingsView()
                 .tabItem {
-                    Label("Analysis", systemImage: "cpu")
+                    Label(translate("settings.tab.analysis"), systemImage: "cpu")
                 }
 
             AISettingsTab()
                 .tabItem {
-                    Label("AI", systemImage: "brain")
+                    Label(translate("settings.tab.ai"), systemImage: "brain")
                 }
         }
         .frame(width: 500, height: 350)
@@ -240,13 +251,24 @@ struct SettingsView: View {
 struct GeneralSettingsView: View {
     @AppStorage("autoAnalyze") private var autoAnalyze = true
     @AppStorage("showHexView") private var showHexView = true
+    @AppStorage("appLanguage") private var appLanguage = AppLanguage.systemCode
 
     var body: some View {
         Form {
-            Toggle("Auto-analyze on file open", isOn: $autoAnalyze)
-            Toggle("Show Hex View by default", isOn: $showHexView)
+            Picker(translate("settings.general.language"), selection: $appLanguage) {
+                ForEach(AppLanguage.available) { language in
+                    Text(language.pickerLabel).tag(language.code)
+                }
+            }
+            Toggle(translate("settings.general.autoAnalyze"), isOn: $autoAnalyze)
+            Toggle(translate("settings.general.showHexView"), isOn: $showHexView)
         }
         .padding()
+        .onAppear {
+            if !AppLanguage.isValidStorageValue(appLanguage) {
+                appLanguage = AppLanguage.systemCode
+            }
+        }
     }
 }
 
@@ -256,7 +278,7 @@ struct AppearanceSettingsView: View {
 
     var body: some View {
         Form {
-            Picker("Font", selection: $fontName) {
+            Picker(translate("settings.appearance.font"), selection: $fontName) {
                 Text("SF Mono").tag("SF Mono")
                 Text("Menlo").tag("Menlo")
                 Text("Monaco").tag("Monaco")
@@ -264,7 +286,16 @@ struct AppearanceSettingsView: View {
             }
 
             Slider(value: $fontSize, in: 10...20, step: 1) {
-                Text("Font Size: \(Int(fontSize))")
+                Text(translate("settings.appearance.fontSize"))
+            }
+
+            HStack {
+                Text(translate("settings.appearance.fontSize"))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text("\(Int(fontSize))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .padding()
@@ -278,9 +309,9 @@ struct AnalysisSettingsView: View {
 
     var body: some View {
         Form {
-            Toggle("Deep analysis (slower)", isOn: $deepAnalysis)
-            Toggle("Analyze strings", isOn: $analyzeStrings)
-            Toggle("Analyze cross-references", isOn: $analyzeXRefs)
+            Toggle(translate("settings.analysis.deepAnalysis"), isOn: $deepAnalysis)
+            Toggle(translate("settings.analysis.analyzeStrings"), isOn: $analyzeStrings)
+            Toggle(translate("settings.analysis.analyzeXrefs"), isOn: $analyzeXRefs)
         }
         .padding()
     }
@@ -395,5 +426,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         image.unlockFocus()
         return image
+    }
+}
+
+@MainActor
+final class AboutWindowManager {
+    static let shared = AboutWindowManager()
+    private var window: NSWindow?
+
+    func open() {
+        if let existingWindow = window {
+            existingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let controller = NSHostingController(rootView: AboutView())
+        let aboutWindow = NSWindow(contentViewController: controller)
+        aboutWindow.title = translate("about.window.title")
+        aboutWindow.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        aboutWindow.setContentSize(NSSize(width: 620, height: 620))
+        aboutWindow.contentMinSize = NSSize(width: 620, height: 620)
+        aboutWindow.center()
+        aboutWindow.isReleasedWhenClosed = false
+
+        window = aboutWindow
+        aboutWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }

@@ -3,6 +3,7 @@
 Build/
 DerivedData/
 *.app
+dist
 
 # Swift Package Manager
 .swiftpm/
@@ -27,6 +28,7 @@ xcuserdata/
 *.swp
 *.swo
 *~
+.run
 
 # Temporary files
 *.tmp
