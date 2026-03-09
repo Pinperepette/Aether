@@ -3,6 +3,7 @@
 Build/
 DerivedData/
 *.app
+dist
 
 # Swift Package Manager
 .swiftpm/
